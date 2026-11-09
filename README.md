@@ -1,5 +1,9 @@
 # Cartable
 
+**Live app: [cartable-zd23.onrender.com](https://cartable-zd23.onrender.com)**
+
+> Free hosting: the first visit after a quiet spell can take about a minute while the server wakes up.
+
 An open-source online classroom for children and their teachers. Teachers plan
 classes on a calendar, then teach live with video, screen sharing and a shared
 whiteboard. Students see their timetable and join with one click.
