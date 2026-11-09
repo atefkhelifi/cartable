@@ -441,3 +441,17 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- language switch ---------- */
+.lang-switch { display: inline-flex; padding: 3px; gap: 2px; border: 2px solid var(--line-2); border-radius: 999px; background: var(--card); align-self: flex-start; margin: 0 .5rem .25rem; }
+.lang-switch button { min-width: 40px; min-height: 30px; border: 0; border-radius: 999px; background: none; font-family: var(--font-head); font-weight: 600; font-size: .85rem; color: var(--ink-2); }
+.lang-switch button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.welcome-card { position: relative; }
+.lang-switch-top { position: absolute; top: 1.25rem; right: 1.25rem; margin: 0; }
+@media (max-width: 860px) {
+  .rail .lang-switch { align-self: center; margin: 0; }
+}
+
+/* keep the hidden colour radios inside their swatch */
+.color-pick label, .role-opt { position: relative; }
+.color-pick input, .role-opt input { inset: 0; width: 100%; height: 100%; margin: 0; }

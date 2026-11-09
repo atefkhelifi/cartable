@@ -2,6 +2,8 @@
 (() => {
   const C = window.Cartable;
   const { $, $$, esc } = C;
+  const tr = (k, v) => C.t(k, v);
+  const loc = () => window.I18N.locale();
   let ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
   fetch('/api/config').then((r) => r.json()).then((c) => { if (c.iceServers?.length) ICE = { iceServers: c.iceServers }; }).catch(() => {});
   const BOARD_W = 1600, BOARD_H = 1000;
@@ -32,7 +34,7 @@
     if (R.active && code === roomCode) return;
     if (R.active) R.leave(true);
     code = roomCode; course = c;
-    $('#prejoin-title').textContent = c ? `Ready for ${c.title}?` : 'Ready to join?';
+    $('#prejoin-title').textContent = c ? tr('Ready for {title}?', { title: c.title }) : tr('Ready to join?');
     const dlg = $('#dlg-prejoin');
     if (!navigator.mediaDevices?.getUserMedia) {
       C.toast('Camera and microphone need a secure (https) connection.');
@@ -65,8 +67,8 @@
   function join() {
     R.active = true;
     $('#view-room').hidden = false;
-    $('#room-name').textContent = course?.title || 'Live class';
-    $('#room-meta').textContent = [course?.subject, course?.group, `Code ${code}`].filter(Boolean).join(', ');
+    $('#room-name').textContent = course?.title || tr('Live class');
+    $('#room-meta').textContent = [course?.subject && tr(course.subject), course?.group, tr('Code {code}', { code })].filter(Boolean).join(', ');
     $('#chat-log').innerHTML = '';
     $('#tiles').innerHTML = '';
     if (audioTrack()) audioTrack().enabled = micOn;
@@ -90,13 +92,13 @@
         joinedAt = Date.now();
         clockTimer = setInterval(tickClock, 1000); tickClock();
         speakTimer = setInterval(detectSpeaking, 250);
-        sys('You joined the class.');
+        sys(tr('You joined the class.'));
         renderPeople();
       });
     });
 
-    socket.on('peer-joined', (p) => { createPeer(p.id, p); sys(`${p.name} joined.`); renderPeople(); });
-    socket.on('peer-left', ({ id }) => { const p = peers.get(id); if (p) sys(`${p.info.name} left.`); removePeer(id); });
+    socket.on('peer-joined', (p) => { createPeer(p.id, p); sys(tr('{name} joined.', { name: p.name })); renderPeople(); });
+    socket.on('peer-left', ({ id }) => { const p = peers.get(id); if (p) sys(tr('{name} left.', { name: p.info.name })); removePeer(id); });
     socket.on('peer-state', (s) => {
       if (s.id === myId) return;
       const p = peers.get(s.id); if (!p) return;
@@ -104,7 +106,7 @@
       p.info = { ...p.info, ...s };
       updateTile(s.id);
       renderPeople();
-      if (raised) { sys(`${s.name} raised their hand ✋`); if (myRole === 'teacher') C.toast(`${s.name} raised their hand`); }
+      if (raised) { sys(tr('{name} raised their hand ✋', { name: s.name })); if (myRole === 'teacher') C.toast(tr('{name} raised their hand', { name: s.name })); }
       updateSpotlight();
     });
     socket.on('signal', onSignal);
@@ -117,7 +119,7 @@
     socket.on('force-lower-hand', () => { if (hand) { toggleHand(); C.toast('The teacher lowered your hand'); } });
     socket.on('removed', () => { C.toast('The teacher removed you from the class.'); R.leave(); });
     socket.on('ended', () => { C.toast('The teacher ended the class. See you next time!'); R.leave(); });
-    socket.on('disconnect', (reason) => { if (R.active && reason !== 'io client disconnect') sys('Connection lost. Trying to reconnect…'); });
+    socket.on('disconnect', (reason) => { if (R.active && reason !== 'io client disconnect') sys(tr('Connection lost. Trying to reconnect…')); });
   }
 
   // ---------- peers ----------
@@ -182,7 +184,7 @@
   const videoSenders = () => [...peers.values()].map((p) => p.pc.getTransceivers()[1]?.sender).filter(Boolean);
 
   // ---------- tiles ----------
-  const MIC_OFF = '<svg viewBox="0 0 24 24" aria-label="Microphone off"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/></svg>';
+  const MIC_OFF = () => `<svg viewBox="0 0 24 24" aria-label="${tr('Microphone off')}"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/></svg>`;
 
   function addTile(id, info, stream, mine) {
     const el = document.createElement('div');
@@ -191,7 +193,7 @@
     el.innerHTML = `<video autoplay playsinline ${mine ? 'muted' : ''}></video>
       <div class="ph">${C.avatar(info.name)}</div>
       <div class="tile-name"></div>
-      <button class="btn btn-ghost btn-sm pin" type="button">Pin</button>`;
+      <button class="btn btn-ghost btn-sm pin" type="button">${tr('Pin')}</button>`;
     const v = el.querySelector('video');
     v.srcObject = stream;
     el.querySelector('.pin').addEventListener('click', () => { pinnedId = pinnedId === id ? null : id; boardBig = false; updateSpotlight(); });
@@ -210,11 +212,11 @@
     el.classList.toggle('cam-on', !!(i.cam || i.sharing));
     el.classList.toggle('hand', !!i.hand);
     el.classList.toggle('sharing', !!i.sharing);
-    el.querySelector('.tile-name').innerHTML = `${i.mic === false ? MIC_OFF : ''}<span>${esc(i.name)}${id === 'me' ? ' (you)' : ''}</span>${i.role === 'teacher' ? '<span class="role">Teacher</span>' : ''}`;
+    el.querySelector('.tile-name').innerHTML = `${i.mic === false ? MIC_OFF() : ''}<span>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</span>${i.role === 'teacher' ? `<span class="role">${tr('Teacher')}</span>` : ''}`;
     let flag = el.querySelector('.hand-flag');
     if (i.hand && !flag) { flag = document.createElement('span'); flag.className = 'hand-flag'; flag.textContent = '✋'; el.append(flag); }
     if (!i.hand && flag) flag.remove();
-    el.querySelector('.pin').textContent = pinnedId === id ? 'Unpin' : 'Pin';
+    el.querySelector('.pin').textContent = tr(pinnedId === id ? 'Unpin' : 'Pin');
   }
 
   function layoutTiles() {
@@ -236,13 +238,13 @@
     if (target === 'board') {
       spot.innerHTML = '';
       spot.append($('#board'));
-      $('#board-big').textContent = 'Back to panel';
+      $('#board-big').textContent = tr('Back to panel');
       return;
     }
-    $('#board-big').textContent = 'Show big';
+    $('#board-big').textContent = tr('Show big');
     const stream = target === 'me' ? (screenTrack ? new MediaStream([screenTrack]) : camStream) : peers.get(target)?.stream;
     const i = infoOf(target);
-    spot.innerHTML = `<video autoplay playsinline muted></video><div class="tile-name"><span>${esc(i?.name || '')}${i?.sharing ? ' is sharing their screen' : ''}</span></div>`;
+    spot.innerHTML = `<video autoplay playsinline muted></video><div class="tile-name"><span>${esc(i?.sharing ? tr('{name} is sharing their screen', { name: i.name }) : i?.name || '')}</span></div>`;
     spot.querySelector('video').srcObject = stream;
     $$('.tile').forEach((t) => updateTile(t.dataset.id));
   }
@@ -281,7 +283,7 @@
   function toggleHand() {
     hand = !hand;
     setPressed('#btn-hand', hand);
-    $('#hand-label').textContent = hand ? 'Lower hand' : 'Raise hand';
+    $('#hand-label').textContent = tr(hand ? 'Lower hand' : 'Raise hand');
     sendState();
   }
   async function toggleShare() {
@@ -312,7 +314,7 @@
   $('#btn-hand').addEventListener('click', toggleHand);
   $('#btn-share').addEventListener('click', toggleShare);
   $('#btn-leave').addEventListener('click', () => R.leave());
-  $('#btn-end').addEventListener('click', () => { if (confirm('End the class for everyone?')) socket.emit('teacher', { action: 'end' }); });
+  $('#btn-end').addEventListener('click', () => { if (confirm(tr('End the class for everyone?'))) socket.emit('teacher', { action: 'end' }); });
   $('#btn-side').addEventListener('click', () => $('#side').classList.toggle('open'));
   $('#btn-copy-link').addEventListener('click', async () => { await navigator.clipboard?.writeText(C.inviteLink(code)).catch(() => {}); C.toast('Invite link copied'); });
 
@@ -350,8 +352,8 @@
   function onChat(m) {
     const li = document.createElement('li');
     if (m.from === myId) li.className = 'mine';
-    const time = new Date(m.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    li.innerHTML = `<div class="who">${m.from === myId ? 'You' : esc(m.name)}${m.role === 'teacher' && m.from !== myId ? ' <span class="role">(Teacher)</span>' : ''}, ${time}</div><div class="bubble">${esc(m.text)}</div>`;
+    const time = new Date(m.at).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit' });
+    li.innerHTML = `<div class="who">${m.from === myId ? tr('You') : esc(m.name)}${m.role === 'teacher' && m.from !== myId ? ` <span class="role">${tr('(Teacher)')}</span>` : ''}, ${time}</div><div class="bubble">${esc(m.text)}</div>`;
     appendChat(li);
     if ($('#tab-chat').hidden && m.from !== myId) { unread++; $('#chat-badge').textContent = unread; $('#chat-badge').hidden = false; }
   }
@@ -369,18 +371,18 @@
     $('#people-list').innerHTML = rows.map(([id, i]) => `
       <li>
         ${C.avatar(i.name)}
-        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' (you)' : ''}</b><small>${i.role === 'teacher' ? 'Teacher' : 'Student'}${i.mic === false ? ', muted' : ''}${i.sharing ? ', sharing screen' : ''}</small></div>
-        ${i.hand ? '<span class="hand-mark" title="Hand raised">✋</span>' : ''}
+        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</b><small>${tr(i.role === 'teacher' ? 'Teacher' : 'Student')}${i.mic === false ? ', ' + tr('muted') : ''}${i.sharing ? ', ' + tr('sharing screen') : ''}</small></div>
+        ${i.hand ? `<span class="hand-mark" title="${tr('Hand raised')}">✋</span>` : ''}
         ${myRole === 'teacher' && id !== 'me' ? `<div class="acts">
-          ${i.hand ? `<button data-a="lower-hand" data-id="${id}">Lower hand</button>` : ''}
-          ${i.mic !== false ? `<button data-a="mute" data-id="${id}">Mute</button>` : ''}
-          <button data-a="remove" data-id="${id}">Remove</button></div>` : ''}
+          ${i.hand ? `<button data-a="lower-hand" data-id="${id}">${tr('Lower hand')}</button>` : ''}
+          ${i.mic !== false ? `<button data-a="mute" data-id="${id}">${tr('Mute')}</button>` : ''}
+          <button data-a="remove" data-id="${id}">${tr('Remove')}</button></div>` : ''}
       </li>`).join('');
     $('#people-count').textContent = rows.length;
   }
   $('#people-list').addEventListener('click', (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return;
-    if (b.dataset.a === 'remove' && !confirm(`Remove ${peers.get(b.dataset.id)?.info.name} from the class?`)) return;
+    if (b.dataset.a === 'remove' && !confirm(tr('Remove {name} from the class?', { name: peers.get(b.dataset.id)?.info.name }))) return;
     socket.emit('teacher', { action: b.dataset.a, target: b.dataset.id });
   });
   $$('[data-t]').forEach((b) => b.addEventListener('click', async () => {
@@ -388,20 +390,20 @@
     if (a === 'attendance') {
       try {
         const list = await C.api(`/api/attendance/${code}`);
-        $('#att-list').innerHTML = list.length ? list.slice().reverse().map((x) => `<li><span>${esc(x.name)}${x.role === 'teacher' ? ' (Teacher)' : ''}</span><span class="muted">${new Date(x.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span></li>`).join('') : '<li>No one has joined yet.</li>';
+        $('#att-list').innerHTML = list.length ? list.slice().reverse().map((x) => `<li><span>${esc(x.name)}${x.role === 'teacher' ? ' ' + tr('(Teacher)') : ''}</span><span class="muted">${new Date(x.at).toLocaleString(loc(), { dateStyle: 'short', timeStyle: 'short' })}</span></li>`).join('') : `<li>${tr('No one has joined yet.')}</li>`;
         $('#dlg-attendance').showModal();
       } catch (err) { C.toast(err.message); }
       return;
     }
-    if (a === 'clear-board' && !confirm('Clear the whiteboard for everyone?')) return;
+    if (a === 'clear-board' && !confirm(tr('Clear the whiteboard for everyone?'))) return;
     socket.emit('teacher', { action: a });
     if (a === 'mute-all') C.toast('Everyone is muted');
   }));
   function applyFlags(f) {
     boardLocked = !!f.boardLocked; roomLocked = !!f.locked;
     $('#room-lock-pill').hidden = !roomLocked;
-    $('#t-lock').textContent = roomLocked ? 'Unlock class' : 'Lock class';
-    $('#t-lock-board').textContent = boardLocked ? 'Let everyone draw' : 'Only I can draw';
+    $('#t-lock').textContent = tr(roomLocked ? 'Unlock class' : 'Lock class');
+    $('#t-lock-board').textContent = tr(boardLocked ? 'Let everyone draw' : 'Only I can draw');
     $('#board-note').hidden = !(boardLocked && myRole !== 'teacher');
   }
 
