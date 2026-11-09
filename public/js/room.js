@@ -352,7 +352,7 @@
   function onChat(m) {
     const li = document.createElement('li');
     if (m.from === myId) li.className = 'mine';
-    const time = new Date(m.at).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit' });
+    const time = new Date(m.at).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit', hourCycle: window.I18N.lang === 'en' ? undefined : 'h23' });
     li.innerHTML = `<div class="who">${m.from === myId ? tr('You') : esc(m.name)}${m.role === 'teacher' && m.from !== myId ? ` <span class="role">${tr('(Teacher)')}</span>` : ''}, ${time}</div><div class="bubble">${esc(m.text)}</div>`;
     appendChat(li);
     if ($('#tab-chat').hidden && m.from !== myId) { unread++; $('#chat-badge').textContent = unread; $('#chat-badge').hidden = false; }

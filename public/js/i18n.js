@@ -200,10 +200,198 @@
     'This class is full (16 people max).': 'Ce cours est complet (16 personnes maximum).',
   };
 
-  const DICTS = { fr };
-  const SUPPORTED = ['en', 'fr'];
+  const ar = {
+    "Class is about to start.": "الحصة ستبدأ قريبًا.",
+    "Tell us who you are, and we'll take you to your timetable.": "عرّفنا بنفسك، وسنأخذك إلى جدول حصصك.",
+    "Your name": "اسمك",
+    "e.g. Lina": "مثال: لينا",
+    "I am a…": "أنا…",
+    "Student": "تلميذ",
+    "I join classes": "أحضر الحصص",
+    "Teacher": "معلّم",
+    "I plan and lead classes": "أخطّط الحصص وأقدّمها",
+    "Teacher code": "رمز المعلّم",
+    "Given by your school": "تمنحه لك مدرستك",
+    "Open my timetable": "افتح جدول حصصي",
+    "That teacher code is not right. Ask your school for it, or join as a student.": "رمز المعلّم غير صحيح. اطلبه من مدرستك، أو ادخل كتلميذ.",
+    "Language": "اللغة",
+    "Main": "القائمة الرئيسية",
+    "Today": "اليوم",
+    "Calendar": "التقويم",
+    "Switch user": "تغيير المستخدم",
+    "Good morning, {name}": "صباح الخير يا {name}",
+    "Good afternoon, {name}": "مساء الخير يا {name}",
+    "Good evening, {name}": "مساء الخير يا {name}",
+    "Join with a code": "الانضمام برمز",
+    "Start a class now": "ابدأ حصة الآن",
+    "Today's timetable": "حصص اليوم",
+    "Coming up this week": "هذا الأسبوع",
+    "No classes planned yet": "لا توجد حصص مبرمجة بعد",
+    "Plan your first class in the calendar, or start one right now.": "برمج أول حصة في التقويم، أو ابدأ حصة الآن.",
+    "When your teacher plans a class, it will show up here.": "عندما يبرمج معلّمك حصة، ستظهر هنا.",
+    "Happening now": "جارية الآن",
+    "Today at {time}": "اليوم على الساعة {time}",
+    "{date} at {time}": "{date} على الساعة {time}",
+    "Bring:": "أحضِر معك:",
+    "Starts in {time}": "تبدأ بعد {time}",
+    "You can join 10 minutes before.": "يمكنك الدخول قبل 10 دقائق من البداية.",
+    "{n} min": "{n} د",
+    "{h} h {m} min": "{h} س {m} د",
+    "{h} h": "{h} س",
+    "{n} day": "يوم واحد",
+    "{n} days": "{n} أيام",
+    "Finished": "انتهت",
+    "Join now": "ادخل الآن",
+    "Open class": "افتح الحصة",
+    "Join": "انضمّ",
+    "Nothing on the timetable today.": "لا حصص اليوم.",
+    "Nothing else this week.": "لا شيء آخر هذا الأسبوع.",
+    "Previous month": "الشهر السابق",
+    "Next month": "الشهر التالي",
+    "Month": "الشهر",
+    "Download calendar (.ics)": "تنزيل التقويم",
+    "Plan a class": "برمجة حصة",
+    "{date}, {n} classes": "{date}، عدد الحصص: {n}",
+    "+{n} more": "+{n} أخرى",
+    "No classes": "لا حصص",
+    "1 class": "حصة واحدة",
+    "{n} classes": "عدد الحصص: {n}",
+    "{start} to {end}": "من {start} إلى {end}",
+    "With {name}": "مع {name}",
+    "Copy link": "نسخ الرابط",
+    "Delete": "حذف",
+    "Plan a class on this day": "برمجة حصة في هذا اليوم",
+    "Invite link copied": "تم نسخ رابط الدعوة",
+    "Delete every week of this class?\n\nOK: delete all weeks\nCancel: delete only this day": "حذف كل أسابيع هذه الحصة؟\n\nموافق: حذف كل الأسابيع\nإلغاء: حذف هذا اليوم فقط",
+    "Class deleted": "تم حذف الحصة",
+    "Added {n} weekly classes": "تمت إضافة {n} حصص أسبوعية",
+    "Class added to the calendar": "تمت إضافة الحصة إلى التقويم",
+    "Join: {link}": "رابط الانضمام: {link}",
+    "Title": "العنوان",
+    "e.g. Fractions with pizza": "مثال: الكسور مع البيتزا",
+    "Subject": "المادة",
+    "Maths": "الرياضيات",
+    "Reading": "القراءة",
+    "Writing": "الكتابة",
+    "Science": "العلوم",
+    "History": "التاريخ",
+    "Geography": "الجغرافيا",
+    "Languages": "اللغات",
+    "Art": "التربية التشكيلية",
+    "Music": "الموسيقى",
+    "Sport": "التربية البدنية",
+    "Other": "أخرى",
+    "Class / group": "القسم / الفوج",
+    "e.g. Year 3 — Blue group": "مثال: السنة الثالثة — الفوج الأزرق",
+    "Date": "التاريخ",
+    "Starts": "البداية",
+    "Ends": "النهاية",
+    "Repeat every week for": "التكرار كل أسبوع لمدة",
+    "Just once": "مرة واحدة فقط",
+    "4 weeks": "4 أسابيع",
+    "8 weeks": "8 أسابيع",
+    "12 weeks": "12 أسبوعًا",
+    "The whole school year": "السنة الدراسية كاملة",
+    "Colour": "اللون",
+    "What to bring (optional)": "ما يجب إحضاره (اختياري)",
+    "e.g. A pencil, coloured paper and scissors": "مثال: قلم رصاص وورق ملوّن ومقص",
+    "Cancel": "إلغاء",
+    "Add to calendar": "إضافة إلى التقويم",
+    "Class code": "رمز الحصة",
+    "Attendance": "الحضور",
+    "Done": "تم",
+    "Class": "الحصة",
+    "Live class": "حصة مباشرة",
+    "Code {code}": "الرمز {code}",
+    "Copy invite link": "نسخ رابط الدعوة",
+    "Locked": "مقفلة",
+    "Chat": "المحادثة",
+    "People": "المشاركون",
+    "Whiteboard": "السبورة",
+    "Write a message": "اكتب رسالة",
+    "Message": "رسالة",
+    "Send": "إرسال",
+    "Mute everyone": "كتم صوت الجميع",
+    "Lock class": "قفل الحصة",
+    "Unlock class": "فتح الحصة",
+    "Ink": "حبر",
+    "Blue": "أزرق",
+    "Green": "أخضر",
+    "Red": "أحمر",
+    "Orange": "برتقالي",
+    "Eraser": "ممحاة",
+    "Brush size": "حجم الفرشاة",
+    "Only I can draw": "الرسم لي فقط",
+    "Let everyone draw": "السماح للجميع بالرسم",
+    "Clear": "مسح",
+    "Show big": "تكبير",
+    "Back to panel": "إرجاع إلى اللوحة",
+    "Only the teacher can draw right now.": "المعلّم فقط يمكنه الرسم الآن.",
+    "Class controls": "أدوات التحكم في الحصة",
+    "Mic": "الميكروفون",
+    "Camera": "الكاميرا",
+    "Share screen": "مشاركة الشاشة",
+    "Raise hand": "ارفع يدك",
+    "Lower hand": "أنزل يدك",
+    "React": "تفاعل",
+    "Panel": "اللوحة",
+    "Leave": "مغادرة",
+    "End for all": "إنهاء للجميع",
+    "Ready to join?": "هل أنت مستعد للانضمام؟",
+    "Ready for {title}?": "هل أنت مستعد لحصة «{title}»؟",
+    "No camera found. You can still join with your voice or chat.": "لم يتم العثور على كاميرا. يمكنك المشاركة بصوتك أو بالمحادثة.",
+    "Microphone on": "الميكروفون مفعّل",
+    "Camera on": "الكاميرا مفعّلة",
+    "Not now": "ليس الآن",
+    "Join class": "الانضمام إلى الحصة",
+    "Pin": "تثبيت",
+    "Unpin": "إلغاء التثبيت",
+    "(you)": "(أنت)",
+    "You": "أنت",
+    "Microphone off": "الميكروفون مكتوم",
+    "{name} is sharing their screen": "{name} يشارك شاشته",
+    "You joined the class.": "انضممت إلى الحصة.",
+    "{name} joined.": "انضم {name}.",
+    "{name} left.": "غادر {name}.",
+    "{name} raised their hand ✋": "{name} رفع يده ✋",
+    "{name} raised their hand": "{name} رفع يده",
+    "Connection lost. Trying to reconnect…": "انقطع الاتصال. جارٍ إعادة المحاولة…",
+    "The teacher muted your microphone": "كتم المعلّم الميكروفون الخاص بك",
+    "The teacher lowered your hand": "أنزل المعلّم يدك",
+    "The teacher removed you from the class.": "أخرجك المعلّم من الحصة.",
+    "The teacher ended the class. See you next time!": "أنهى المعلّم الحصة. إلى اللقاء!",
+    "Camera and microphone need a secure (https) connection.": "تحتاج الكاميرا والميكروفون إلى اتصال آمن (https).",
+    "No microphone found.": "لم يتم العثور على ميكروفون.",
+    "No camera found.": "لم يتم العثور على كاميرا.",
+    "Screen sharing is not supported on this device.": "مشاركة الشاشة غير متاحة على هذا الجهاز.",
+    "End the class for everyone?": "إنهاء الحصة للجميع؟",
+    "Remove {name} from the class?": "إخراج {name} من الحصة؟",
+    "Clear the whiteboard for everyone?": "مسح السبورة للجميع؟",
+    "Everyone is muted": "تم كتم صوت الجميع",
+    "No one has joined yet.": "لم ينضم أحد بعد.",
+    "(Teacher)": "(المعلّم)",
+    "muted": "مكتوم",
+    "sharing screen": "يشارك الشاشة",
+    "Hand raised": "يد مرفوعة",
+    "Mute": "كتم",
+    "Remove": "إخراج",
+    "Something went wrong. Try again.": "حدث خطأ. حاول مرة أخرى.",
+    "Only teachers can create classes.": "المعلّمون فقط يمكنهم إنشاء الحصص.",
+    "Add a title, a date, a start time and an end time.": "أضف عنوانًا وتاريخًا ووقت بداية ووقت نهاية.",
+    "The class must end after it starts.": "يجب أن تنتهي الحصة بعد بدايتها.",
+    "Only teachers can delete classes.": "المعلّمون فقط يمكنهم حذف الحصص.",
+    "Class not found.": "الحصة غير موجودة.",
+    "Only teachers can see attendance.": "المعلّمون فقط يمكنهم رؤية الحضور.",
+    "This class link is not valid.": "رابط الحصة هذا غير صالح.",
+    "The teacher has locked this class. Ask them to unlock it.": "أقفل المعلّم هذه الحصة. اطلب منه فتحها.",
+    "This class is full (16 people max).": "هذه الحصة ممتلئة (16 شخصًا كحد أقصى).",
+  };
+
+  const DICTS = { fr, ar };
+  const SUPPORTED = ['en', 'fr', 'ar'];
+  const RTL = ['ar'];
   const read = () => { try { return localStorage.getItem('cartable.lang'); } catch { return null; } };
-  let lang = read() || ((navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+  let lang = read() || (navigator.language || 'en').toLowerCase().slice(0, 2);
   if (!SUPPORTED.includes(lang)) lang = 'en';
 
   const t = (key, vars) => {
@@ -217,13 +405,14 @@
   const ATTRS = ['placeholder', 'aria-label', 'title'];
   function apply(root = document.body) {
     document.documentElement.lang = lang;
+    document.documentElement.dir = RTL.includes(lang) ? 'rtl' : 'ltr';
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: (n) => (n.parentElement.closest('script, style, [data-no-i18n]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
     });
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const raw = n.nodeValue;
       const key = origText.has(n) ? origText.get(n) : raw.trim();
-      if (!key || !(key in fr)) continue;
+      if (!key || !(key in fr || key in ar)) continue;
       origText.set(n, key);
       const lead = raw.match(/^\s*/)[0], trail = raw.match(/\s*$/)[0];
       n.nodeValue = lead + t(key) + trail;
@@ -233,7 +422,7 @@
         if (!el.hasAttribute(a)) continue;
         const store = `data-i18n-${a}`;
         const key = el.getAttribute(store) || el.getAttribute(a);
-        if (!(key in fr)) continue;
+        if (!(key in fr || key in ar)) continue;
         el.setAttribute(store, key);
         el.setAttribute(a, t(key));
       }
@@ -254,6 +443,6 @@
     if (b) setLang(b.dataset.lang);
   });
 
-  window.I18N = { t, apply, setLang, get lang() { return lang; }, locale: () => (lang === 'fr' ? 'fr-FR' : (navigator.language?.startsWith('en') ? navigator.language : 'en-GB')) };
+  window.I18N = { t, apply, setLang, get lang() { return lang; }, locale: () => (lang === 'fr' ? 'fr-FR' : lang === 'ar' ? 'ar-TN' : (navigator.language?.startsWith('en') ? navigator.language : 'en-GB')) };
   document.addEventListener('DOMContentLoaded', () => apply());
 })();

@@ -17,7 +17,7 @@
   const at = (c, t) => new Date(`${c.date}T${t}:00`);
   const { t } = window.I18N;
   const loc = () => window.I18N.locale();
-  const fmtTime = (x) => new Date(`2000-01-01T${x}:00`).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit' });
+  const fmtTime = (x) => new Date(`2000-01-01T${x}:00`).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit', hourCycle: window.I18N.lang === 'en' ? undefined : 'h23' });
   C.t = t;
   C.initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   const AV_COLORS = ['#2F6FED', '#2BA36B', '#8B5CF6', '#F0584A', '#F29E1F', '#0E9AA7'];

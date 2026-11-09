@@ -149,12 +149,12 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100%; }
 .rail {
   position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: .25rem;
-  padding: 1.25rem .9rem; background: var(--card); border-right: 2px solid var(--line);
+  padding: 1.25rem .9rem; background: var(--card); border-inline-end: 2px solid var(--line);
 }
 .rail .brand { padding: 0 .5rem 1.25rem; }
 .rail-link {
   display: flex; align-items: center; gap: .75rem; padding: .7rem .8rem; border-radius: var(--r-md);
-  color: var(--ink-2); text-decoration: none; font-weight: 700; background: none; border: 0; text-align: left; width: 100%;
+  color: var(--ink-2); text-decoration: none; font-weight: 700; background: none; border: 0; text-align: start; width: 100%;
 }
 .rail-link svg { width: 22px; height: 22px; }
 .rail-link:hover { background: var(--paper); color: var(--ink); }
@@ -183,7 +183,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 1.75rem 1.75rem 1.75rem 2.4rem; border-radius: var(--r-lg);
   background: var(--card); border: 2px solid var(--ink); box-shadow: 6px 6px 0 var(--ink);
 }
-.next-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 12px; background: var(--subject, var(--blue)); }
+.next-card::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; width: 12px; background: var(--subject, var(--blue)); }
 .next-card .when { font-weight: 700; color: var(--ink-2); }
 .next-card h2 { font-size: 2.1rem; margin: .25rem 0 .4rem; }
 .next-card.is-live { background: var(--yellow-soft); }
@@ -202,7 +202,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .timeline li.done { opacity: .55; }
 .empty { color: var(--ink-2); padding: .5rem 0; }
 
-.subject-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--subject); margin-right: .4rem; vertical-align: 1px; }
+.subject-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--subject); margin-inline-end: .4rem; vertical-align: 1px; }
 
 .week-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
 .week-list li { display: flex; gap: .8rem; align-items: center; padding: .6rem .75rem; border-radius: var(--r-md); background: var(--subject-soft, var(--paper)); }
@@ -227,10 +227,10 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 }
 .cal-dow { padding: .6rem; font-weight: 700; color: var(--ink-3); font-size: .85rem; border-bottom: 2px solid var(--line); }
 .cal-day {
-  min-height: 112px; padding: .45rem; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
-  background: none; text-align: left; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  min-height: 112px; padding: .45rem; border: 0; border-inline-end: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  background: none; text-align: start; display: flex; flex-direction: column; gap: 3px; min-width: 0;
 }
-.cal-day:nth-child(7n) { border-right: 0; }
+.cal-day:nth-child(7n) { border-inline-end: 0; }
 .cal-day.out { background: #FAFBFE; color: var(--ink-3); }
 .cal-day.weekend { background: #FAFBFE; }
 .cal-day .n { font-family: var(--font-head); font-weight: 600; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; }
@@ -239,14 +239,14 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .cal-day:hover { background: var(--paper); }
 .chip {
   display: block; font-size: .78rem; font-weight: 700; padding: 2px 6px; border-radius: 6px;
-  background: var(--subject-soft); color: var(--ink); border-left: 4px solid var(--subject);
+  background: var(--subject-soft); color: var(--ink); border-inline-start: 4px solid var(--subject);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.more { font-size: .78rem; color: var(--ink-2); padding-left: 4px; }
+.more { font-size: .78rem; color: var(--ink-2); padding-inline-start: 4px; }
 .day-panel h2 { margin-bottom: .25rem; }
 .day-panel .sub { color: var(--ink-2); margin-bottom: 1rem; }
 .day-items { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .75rem; }
-.day-item { padding: .9rem; border-radius: var(--r-md); background: var(--subject-soft); border-left: 6px solid var(--subject); }
+.day-item { padding: .9rem; border-radius: var(--r-md); background: var(--subject-soft); border-inline-start: 6px solid var(--subject); }
 .day-item h3 { font-size: 1.05rem; }
 .day-item .meta { color: var(--ink-2); font-size: .9rem; margin: .15rem 0 .6rem; }
 .day-item .notes { font-size: .9rem; margin-bottom: .6rem; }
@@ -290,7 +290,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .stage { position: relative; min-height: 0; display: flex; flex-direction: column; gap: .75rem; }
 .spotlight { flex: 1 1 auto; min-height: 0; border-radius: var(--r-lg); overflow: hidden; background: #000; position: relative; }
 .spotlight video, .spotlight canvas { width: 100%; height: 100%; object-fit: contain; background: #fff; }
-.spotlight .tile-name { position: absolute; left: .75rem; bottom: .75rem; }
+.spotlight .tile-name { position: absolute; inset-inline-start: .75rem; bottom: .75rem; }
 .tiles { flex: 1 1 auto; min-height: 0; display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); grid-auto-rows: minmax(0, 1fr); align-content: center; }
 .stage.has-spot .tiles { flex: 0 0 132px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 200px; overflow-x: auto; justify-content: start; }
 
@@ -305,15 +305,15 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .tile .ph .avatar { width: 72px; height: 72px; font-size: 1.8rem; }
 .tile.cam-on .ph { display: none; }
 .tile-name {
-  position: absolute; left: .5rem; bottom: .5rem; display: flex; gap: .35rem; align-items: center;
+  position: absolute; inset-inline-start: .5rem; bottom: .5rem; display: flex; gap: .35rem; align-items: center;
   padding: .2rem .6rem; border-radius: 999px; background: rgba(20, 32, 58, .78); font-weight: 700; font-size: .85rem; max-width: calc(100% - 1rem);
 }
 .tile-name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-name .role { color: var(--yellow); font-weight: 700; }
 .tile-name svg { width: 16px; height: 16px; color: var(--red); flex: none; }
-.tile .hand-flag { position: absolute; top: .5rem; right: .5rem; font-size: 1.6rem; animation: wave 1s ease-in-out infinite; }
+.tile .hand-flag { position: absolute; top: .5rem; inset-inline-end: .5rem; font-size: 1.6rem; animation: wave 1s ease-in-out infinite; }
 @keyframes wave { 0%,100% { transform: rotate(-10deg); } 50% { transform: rotate(14deg); } }
-.tile .pin { position: absolute; top: .5rem; left: .5rem; opacity: 0; transition: opacity .15s; }
+.tile .pin { position: absolute; top: .5rem; inset-inline-start: .5rem; opacity: 0; transition: opacity .15s; }
 .tile:hover .pin, .tile .pin:focus-visible { opacity: 1; }
 
 .reactions { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
@@ -336,7 +336,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .chat-log .who .role { color: var(--blue); }
 .chat-log .bubble { background: var(--paper); padding: .5rem .75rem; border-radius: 4px var(--r-md) var(--r-md) var(--r-md); overflow-wrap: anywhere; }
 .chat-log li.mine { align-self: flex-end; }
-.chat-log li.mine .who { text-align: right; }
+.chat-log li.mine .who { text-align: end; }
 .chat-log li.mine .bubble { background: var(--blue); color: #fff; border-radius: var(--r-md) 4px var(--r-md) var(--r-md); }
 .chat-log li.sys { align-self: center; max-width: 100%; font-size: .85rem; color: var(--ink-3); }
 .chat-log a { color: inherit; }
@@ -410,7 +410,7 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
   .shell { grid-template-columns: 1fr; }
   .rail {
     position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: auto; z-index: 20;
-    flex-direction: row; justify-content: space-around; padding: .35rem; border-right: 0; border-top: 2px solid var(--line);
+    flex-direction: row; justify-content: space-around; padding: .35rem; border-inline-end: 0; border-top: 2px solid var(--line);
   }
   .rail .brand, .rail-spacer, .me-chip { display: none; }
   .rail-link { flex-direction: column; gap: 2px; font-size: .75rem; width: auto; padding: .4rem .8rem; }
@@ -420,7 +420,7 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
   .next-card { grid-template-columns: 1fr; padding: 1.25rem 1.25rem 1.25rem 1.8rem; }
   .next-card h2 { font-size: 1.6rem; }
   .cal-day { min-height: 64px; padding: .25rem; }
-  .cal-day .chip { font-size: 0; padding: 0; height: 6px; border-left-width: 0; background: var(--subject); }
+  .cal-day .chip { font-size: 0; padding: 0; height: 6px; border-inline-start-width: 0; background: var(--subject); }
   .cal-day .more { display: none; }
   .cal-dow { padding: .4rem .25rem; font-size: .75rem; }
 
@@ -447,7 +447,7 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
 .lang-switch button { min-width: 40px; min-height: 30px; border: 0; border-radius: 999px; background: none; font-family: var(--font-head); font-weight: 600; font-size: .85rem; color: var(--ink-2); }
 .lang-switch button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 .welcome-card { position: relative; }
-.lang-switch-top { position: absolute; top: 1.25rem; right: 1.25rem; margin: 0; }
+.lang-switch-top { position: absolute; top: 1.25rem; inset-inline-end: 1.25rem; margin: 0; }
 @media (max-width: 860px) {
   .rail .lang-switch { align-self: center; margin: 0; }
 }
@@ -455,3 +455,26 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
 /* keep the hidden colour radios inside their swatch */
 .color-pick label, .role-opt { position: relative; }
 .color-pick input, .role-opt input { inset: 0; width: 100%; height: 100%; margin: 0; }
+
+/* ---------- Arabic: fonts with Arabic letters, right-to-left details ---------- */
+:root:lang(ar) {
+  --font-head: "Baloo Bhaijaan 2", "Fredoka", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans Arabic", "Atkinson Hyperlegible", system-ui, sans-serif;
+}
+:lang(ar) h1, :lang(ar) h2, :lang(ar) h3 { letter-spacing: 0; line-height: 1.35; }
+:lang(ar) body { line-height: 1.7; }
+[dir="rtl"] .cal-nav .icon-btn svg, [dir="rtl"] #btn-signout svg { transform: scaleX(-1); }
+[dir="rtl"] .chat-log .bubble { border-radius: var(--r-md) 4px var(--r-md) var(--r-md); }
+[dir="rtl"] .chat-log li.mine .bubble { border-radius: 4px var(--r-md) var(--r-md) var(--r-md); }
+[dir="rtl"] .welcome { background-position: right top; }
+[dir="rtl"] .welcome { background-image:
+    linear-gradient(270deg, transparent 0 calc(12% - 1px), var(--margin) calc(12% - 1px) 12%, transparent 12%),
+    repeating-linear-gradient(0deg, var(--seyes) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(0deg, rgba(185, 201, 236, .45) 0 1px, transparent 1px 8px),
+    repeating-linear-gradient(90deg, rgba(185, 201, 236, .55) 0 1px, transparent 1px 32px); }
+/* times, codes and links stay left-to-right inside Arabic text */
+[dir="rtl"] .clock, [dir="rtl"] #code-input, [dir="rtl"] input[type="time"], [dir="rtl"] input[type="date"] { direction: ltr; }
+
+.timeline li.empty { display: block; }
+/* titles in another script (e.g. an English title in Arabic) keep their own direction */
+.chip, .next-card h2, .day-item h3, .timeline .what b, .week-list b, .room-title h1, .chat-log .bubble { unicode-bidi: plaintext; }

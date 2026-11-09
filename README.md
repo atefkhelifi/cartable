@@ -30,7 +30,8 @@ whiteboard. Students see their timetable and join with one click.
 - Works on phones and tablets
 
 **Languages**
-- English and French, switchable at any time (EN / FR). French is chosen automatically for French browsers.
+- English, French and Arabic, switchable at any time (EN / FR / ع). The language is chosen automatically from the browser.
+- Arabic uses a full right-to-left layout and Arabic fonts (Baloo Bhaijaan 2, IBM Plex Sans Arabic).
 - To add a language, add a dictionary in `public/js/i18n.js`.
 
 ## Run it
