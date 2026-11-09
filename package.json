@@ -1,0 +1,14 @@
+{
+  "name": "cartable",
+  "version": "1.0.0",
+  "description": "Open-source online classroom: live video, screen sharing, whiteboard and a course calendar for kids.",
+  "main": "server.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}

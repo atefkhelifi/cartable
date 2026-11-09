@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cartable</title>
+  <meta name="description" content="Open-source online classroom for kids and teachers.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='9' width='26' height='19' rx='5' fill='%232F6FED'/><path d='M11 9V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3' fill='none' stroke='%231B2A4A' stroke-width='2.5'/><rect x='13' y='14' width='6' height='5' rx='1.5' fill='%23FFC93C'/></svg>">
+</head>
+<body>
+  <!-- ========== WELCOME / PROFILE ========== -->
+  <section id="view-welcome" class="view welcome" hidden>
+    <div class="welcome-card">
+      <div class="brand brand-lg">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="26" height="19" rx="5" fill="var(--blue)"/><path d="M11 9V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3" fill="none" stroke="var(--ink)" stroke-width="2.5"/><rect x="13" y="14" width="6" height="5" rx="1.5" fill="var(--yellow)"/></svg>
+        <span>Cartable</span>
+      </div>
+      <h1>Class is about to start.</h1>
+      <p class="lead">Tell us who you are, and we'll take you to your timetable.</p>
+      <form id="profile-form" class="stack">
+        <label class="field">
+          <span>Your name</span>
+          <input id="p-name" required maxlength="30" autocomplete="name" placeholder="e.g. Lina">
+        </label>
+        <fieldset class="role-pick">
+          <legend>I am a…</legend>
+          <label class="role-opt"><input type="radio" name="role" value="student" checked><span><b>Student</b><small>I join classes</small></span></label>
+          <label class="role-opt"><input type="radio" name="role" value="teacher"><span><b>Teacher</b><small>I plan and lead classes</small></span></label>
+        </fieldset>
+        <label class="field" id="teacher-code-field" hidden>
+          <span>Teacher code</span>
+          <input id="p-code" type="password" autocomplete="off" placeholder="Given by your school">
+        </label>
+        <p class="form-error" id="profile-error" role="alert"></p>
+        <button class="btn btn-primary btn-lg" type="submit">Open my timetable</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ========== APP SHELL ========== -->
+  <div id="shell" class="shell" hidden>
+    <nav class="rail" aria-label="Main">
+      <a class="brand" href="#/today">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="26" height="19" rx="5" fill="var(--blue)"/><path d="M11 9V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3" fill="none" stroke="var(--ink)" stroke-width="2.5"/><rect x="13" y="14" width="6" height="5" rx="1.5" fill="var(--yellow)"/></svg>
+        <span>Cartable</span>
+      </a>
+      <a class="rail-link" href="#/today" data-nav="today">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+        <span>Today</span>
+      </a>
+      <a class="rail-link" href="#/calendar" data-nav="calendar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+        <span>Calendar</span>
+      </a>
+      <div class="rail-spacer"></div>
+      <div class="me-chip" id="me-chip"></div>
+      <button class="rail-link" id="btn-signout" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>
+        <span>Switch user</span>
+      </button>
+    </nav>
+
+    <main class="main">
+      <!-- TODAY -->
+      <section id="view-today" class="view" hidden>
+        <header class="page-head">
+          <div>
+            <h1 id="today-greeting">Good morning</h1>
+            <p class="muted" id="today-date"></p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost" id="btn-join-code" type="button">Join with a code</button>
+            <button class="btn btn-primary teacher-only" id="btn-instant" type="button">Start a class now</button>
+          </div>
+        </header>
+
+        <div class="today-grid">
+          <section class="next-up" id="next-up" aria-live="polite"></section>
+          <section class="panel">
+            <h2>Today's timetable</h2>
+            <ol class="timeline" id="today-list"></ol>
+          </section>
+          <section class="panel">
+            <h2>Coming up this week</h2>
+            <ul class="week-list" id="week-list"></ul>
+          </section>
+        </div>
+      </section>
+
+      <!-- CALENDAR -->
+      <section id="view-calendar" class="view" hidden>
+        <header class="page-head">
+          <div class="cal-nav">
+            <button class="icon-btn" id="cal-prev" type="button" aria-label="Previous month">
+              <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <h1 id="cal-title">Month</h1>
+            <button class="icon-btn" id="cal-next" type="button" aria-label="Next month">
+              <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+            <button class="btn btn-ghost btn-sm" id="cal-today" type="button">Today</button>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost" id="btn-ics" type="button">Download calendar (.ics)</button>
+            <button class="btn btn-primary teacher-only" id="btn-new-course" type="button">Plan a class</button>
+          </div>
+        </header>
+        <div class="cal-wrap">
+          <div class="cal-grid" id="cal-grid" role="grid"></div>
+          <aside class="panel day-panel" id="day-panel"></aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ========== LIVE CLASSROOM ========== -->
+  <section id="view-room" class="room" hidden>
+    <header class="room-head">
+      <div class="room-title">
+        <span class="live-dot" aria-hidden="true"></span>
+        <div>
+          <h1 id="room-name">Class</h1>
+          <p class="muted" id="room-meta"></p>
+        </div>
+      </div>
+      <div class="room-head-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-copy-link" type="button">Copy invite link</button>
+        <span class="pill" id="room-lock-pill" hidden>Locked</span>
+        <span class="clock" id="room-clock">00:00</span>
+      </div>
+    </header>
+
+    <div class="room-body">
+      <div class="stage" id="stage">
+        <div class="spotlight" id="spotlight" hidden></div>
+        <div class="tiles" id="tiles"></div>
+        <div class="reactions" id="reactions" aria-hidden="true"></div>
+      </div>
+
+      <aside class="side" id="side">
+        <div class="tabs" role="tablist">
+          <button role="tab" class="tab" data-tab="chat" aria-selected="true">Chat <span class="badge" id="chat-badge" hidden></span></button>
+          <button role="tab" class="tab" data-tab="people" aria-selected="false">People <span class="count" id="people-count">1</span></button>
+          <button role="tab" class="tab" data-tab="board" aria-selected="false">Whiteboard</button>
+        </div>
+
+        <div class="tab-panel" id="tab-chat">
+          <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
+          <form class="chat-form" id="chat-form">
+            <input id="chat-input" maxlength="500" autocomplete="off" placeholder="Write a message" aria-label="Message">
+            <button class="btn btn-primary btn-sm" type="submit">Send</button>
+          </form>
+        </div>
+
+        <div class="tab-panel" id="tab-people" hidden>
+          <div class="teacher-only teacher-tools">
+            <button class="btn btn-ghost btn-sm" data-t="mute-all" type="button">Mute everyone</button>
+            <button class="btn btn-ghost btn-sm" data-t="lock" id="t-lock" type="button">Lock class</button>
+            <button class="btn btn-ghost btn-sm" data-t="attendance" type="button">Attendance</button>
+          </div>
+          <ul class="people" id="people-list"></ul>
+        </div>
+
+        <div class="tab-panel board-panel" id="tab-board" hidden>
+          <div class="board-tools">
+            <div class="swatches" id="swatches">
+              <button class="sw" data-c="#1B2A4A" aria-label="Ink" aria-pressed="true"></button>
+              <button class="sw" data-c="#2F6FED" aria-label="Blue"></button>
+              <button class="sw" data-c="#2BA36B" aria-label="Green"></button>
+              <button class="sw" data-c="#F0584A" aria-label="Red"></button>
+              <button class="sw" data-c="#F29E1F" aria-label="Orange"></button>
+              <button class="sw sw-eraser" data-c="eraser" aria-label="Eraser"></button>
+            </div>
+            <input type="range" id="brush" min="2" max="18" value="4" aria-label="Brush size">
+            <button class="btn btn-ghost btn-sm teacher-only" data-t="lock-board" id="t-lock-board" type="button">Only I can draw</button>
+            <button class="btn btn-ghost btn-sm teacher-only" data-t="clear-board" type="button">Clear</button>
+            <button class="btn btn-ghost btn-sm" id="board-big" type="button">Show big</button>
+          </div>
+          <div class="board-wrap" id="board-wrap"><canvas id="board"></canvas></div>
+          <p class="muted small" id="board-note" hidden>Only the teacher can draw right now.</p>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="dock" aria-label="Class controls">
+      <button class="dock-btn" id="btn-mic" type="button" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path class="slash" d="M4 4l16 16"/></svg>
+        <span>Mic</span>
+      </button>
+      <button class="dock-btn" id="btn-cam" type="button" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="M16 10l5-3v10l-5-3"/><path class="slash" d="M4 4l16 16"/></svg>
+        <span>Camera</span>
+      </button>
+      <button class="dock-btn" id="btn-share" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M12 13V8M9.5 10.5L12 8l2.5 2.5"/></svg>
+        <span>Share screen</span>
+      </button>
+      <button class="hand-btn" id="btn-hand" type="button" aria-pressed="false">
+        <span class="hand-emoji" aria-hidden="true">✋</span>
+        <span id="hand-label">Raise hand</span>
+      </button>
+      <div class="react-wrap">
+        <button class="dock-btn" id="btn-react" type="button" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg>
+          <span>React</span>
+        </button>
+        <div class="react-menu" id="react-menu" hidden>
+          <button>👍</button><button>👏</button><button>❤️</button><button>😂</button><button>🎉</button><button>❓</button>
+        </div>
+      </div>
+      <button class="dock-btn dock-side-toggle" id="btn-side" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
+        <span>Panel</span>
+      </button>
+      <button class="btn btn-danger" id="btn-leave" type="button">Leave</button>
+      <button class="btn btn-danger teacher-only" id="btn-end" type="button">End for all</button>
+    </footer>
+  </section>
+
+  <!-- ========== PRE-JOIN ========== -->
+  <dialog id="dlg-prejoin" class="dialog">
+    <form method="dialog" class="stack" id="prejoin-form">
+      <h2 id="prejoin-title">Ready to join?</h2>
+      <div class="prejoin-preview"><video id="prejoin-video" autoplay playsinline muted></video><p id="prejoin-nocam" class="muted" hidden>No camera found. You can still join with your voice or chat.</p></div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="pj-mic" checked> Microphone on</label>
+        <label class="check"><input type="checkbox" id="pj-cam" checked> Camera on</label>
+      </div>
+      <div class="row end">
+        <button class="btn btn-ghost" value="cancel" type="submit">Not now</button>
+        <button class="btn btn-primary" value="join" type="submit">Join class</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ========== NEW COURSE ========== -->
+  <dialog id="dlg-course" class="dialog">
+    <form id="course-form" class="stack">
+      <h2>Plan a class</h2>
+      <label class="field"><span>Title</span><input name="title" required maxlength="80" placeholder="e.g. Fractions with pizza"></label>
+      <div class="row">
+        <label class="field"><span>Subject</span>
+          <select name="subject">
+            <option>Maths</option><option>Reading</option><option>Writing</option><option>Science</option>
+            <option>History</option><option>Geography</option><option>Languages</option><option>Art</option><option>Music</option><option>Sport</option><option>Other</option>
+          </select>
+        </label>
+        <label class="field"><span>Class / group</span><input name="group" maxlength="40" placeholder="e.g. Year 3 — Blue group"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Date</span><input type="date" name="date" required></label>
+        <label class="field"><span>Starts</span><input type="time" name="start" required value="09:00"></label>
+        <label class="field"><span>Ends</span><input type="time" name="end" required value="09:45"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Repeat every week for</span>
+          <select name="repeatWeeks">
+            <option value="1">Just once</option><option value="4">4 weeks</option><option value="8">8 weeks</option><option value="12">12 weeks</option><option value="36">The whole school year</option>
+          </select>
+        </label>
+        <fieldset class="field color-pick">
+          <legend>Colour</legend>
+          <label><input type="radio" name="color" value="blue" checked><i class="c-blue"></i></label>
+          <label><input type="radio" name="color" value="green"><i class="c-green"></i></label>
+          <label><input type="radio" name="color" value="yellow"><i class="c-yellow"></i></label>
+          <label><input type="radio" name="color" value="red"><i class="c-red"></i></label>
+          <label><input type="radio" name="color" value="purple"><i class="c-purple"></i></label>
+          <label><input type="radio" name="color" value="orange"><i class="c-orange"></i></label>
+        </fieldset>
+      </div>
+      <label class="field"><span>What to bring (optional)</span><textarea name="notes" rows="2" maxlength="500" placeholder="e.g. A pencil, coloured paper and scissors"></textarea></label>
+      <p class="form-error" id="course-error" role="alert"></p>
+      <div class="row end">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit">Add to calendar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ========== JOIN BY CODE ========== -->
+  <dialog id="dlg-code" class="dialog dialog-sm">
+    <form id="code-form" class="stack">
+      <h2>Join with a code</h2>
+      <label class="field"><span>Class code</span><input id="code-input" required placeholder="abc-def-ghi" autocomplete="off"></label>
+      <div class="row end">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit">Join</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ========== ATTENDANCE ========== -->
+  <dialog id="dlg-attendance" class="dialog dialog-sm">
+    <div class="stack">
+      <h2>Attendance</h2>
+      <ul class="att-list" id="att-list"></ul>
+      <div class="row end"><button class="btn btn-primary" type="button" data-close>Done</button></div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/room.js"></script>
+</body>
+</html>
