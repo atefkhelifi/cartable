@@ -2,7 +2,8 @@
 (() => {
   const C = window.Cartable;
   const { $, $$, esc } = C;
-  const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
+  let ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
+  fetch('/api/config').then((r) => r.json()).then((c) => { if (c.iceServers?.length) ICE = { iceServers: c.iceServers }; }).catch(() => {});
   const BOARD_W = 1600, BOARD_H = 1000;
 
   const R = (window.Room = { active: false });

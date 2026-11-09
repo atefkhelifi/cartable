@@ -1,0 +1,22 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: cartable
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TEACHER_CODE
+        generateValue: true   # Render creates a random secret; find it under Environment
+      - key: TURN_URLS
+        sync: false           # optional, e.g. turn:global.relay.metered.ca:80,turns:global.relay.metered.ca:443?transport=tcp
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false

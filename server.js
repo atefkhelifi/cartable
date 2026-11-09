@@ -8,7 +8,18 @@ const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
 const TEACHER_CODE = process.env.TEACHER_CODE || 'teach';
-const DB_FILE = path.join(__dirname, 'data', 'db.json');
+const DB_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'db.json');
+
+// ICE servers for WebRTC. STUN is enough on most home networks; school and
+// mobile networks often need a TURN relay (set TURN_URLS, TURN_USERNAME, TURN_CREDENTIAL).
+const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+if (process.env.TURN_URLS) {
+  ICE_SERVERS.push({
+    urls: process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean),
+    username: process.env.TURN_USERNAME || '',
+    credential: process.env.TURN_CREDENTIAL || '',
+  });
+}
 
 // ---------- tiny JSON store ----------
 function loadDb() {
@@ -30,7 +41,10 @@ const roomCode = () => {
 
 // ---------- HTTP ----------
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '200kb' }));
+app.get('/healthz', (req, res) => res.send('ok'));
+app.get('/api/config', (req, res) => res.json({ iceServers: ICE_SERVERS }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const isTeacher = (req) => req.get('x-teacher-code') === TEACHER_CODE;
@@ -182,4 +196,5 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
   console.log(`Cartable is running on http://localhost:${PORT}`);
   if (TEACHER_CODE === 'teach') console.log('Teacher code is "teach". Set TEACHER_CODE to change it.');
+  if (TEACHER_CODE === 'teach' && process.env.NODE_ENV === 'production') console.warn('WARNING: set a secret TEACHER_CODE before letting students in.');
 });

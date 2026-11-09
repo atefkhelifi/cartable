@@ -45,16 +45,27 @@ $env:TEACHER_CODE="my-secret"; npm start
 
 ## Putting it online
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/atefkhelifi/cartable)
+
+1. Click the button above and sign in to Render with GitHub.
+2. Click **Apply**. Render builds the app and gives you a link such as `https://cartable-xxxx.onrender.com`.
+3. In Render, open the service, go to **Environment**, and copy `TEACHER_CODE`. That is the code teachers use to sign in.
+4. Share the link (or a class invite link) with your students.
+
+The free plan sleeps after 15 minutes without visitors (the first visit then takes
+about a minute) and saved classes are wiped when the server restarts. For a real
+school, switch to a paid plan and add a disk mounted at `/var/data` with
+`DATA_DIR=/var/data`.
+
 Browsers only allow the camera, microphone and screen sharing on `https://` (or
-`localhost`). To use Cartable with other people, host it behind HTTPS, for example:
+`localhost`); Render provides HTTPS automatically.
 
-- A VPS with [Caddy](https://caddyserver.com) as a reverse proxy (automatic HTTPS)
-- Render, Railway or Fly.io (they support WebSockets)
-- For a quick test: `npx localtunnel --port 3000` or Cloudflare Tunnel
-
-Video uses public STUN servers. Some school or company networks block direct
-connections; for those, add a TURN server (such as the open-source
-[coturn](https://github.com/coturn/coturn)) to `ICE` in `public/js/room.js`.
+**Video on school or mobile networks.** Video uses public STUN servers, which work
+on most home Wi-Fi. Some school, company and mobile networks block direct
+connections; for those, add a TURN relay by setting `TURN_URLS`,
+`TURN_USERNAME` and `TURN_CREDENTIAL` (for example a free
+[Metered Open Relay](https://www.metered.ca/tools/openrelay/) account, or your
+own [coturn](https://github.com/coturn/coturn) server).
 
 ## How it is built
 
