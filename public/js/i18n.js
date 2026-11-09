@@ -200,6 +200,10 @@
     "This class is being recorded.": "Ce cours est enregistré.",
     "Recording saved to your downloads.": "Enregistrement sauvegardé dans vos téléchargements.",
 
+    // whiteboard image
+    "Save as image": "Enregistrer en image",
+    "Whiteboard saved to your downloads.": "Tableau enregistré dans vos téléchargements.",
+
     // errors from the server
     'Something went wrong. Try again.': 'Un problème est survenu. Réessayez.',
     'Only teachers can create classes.': 'Seuls les enseignants peuvent créer des cours.',
@@ -409,6 +413,8 @@
     "Recording stopped.": "توقف التسجيل.",
     "This class is being recorded.": "هذه الحصة مسجّلة.",
     "Recording saved to your downloads.": "تم حفظ التسجيل في مجلد التنزيلات.",
+    "Save as image": "حفظ كصورة",
+    "Whiteboard saved to your downloads.": "تم حفظ السبورة في مجلد التنزيلات.",
   };
 
   const DICTS = { fr, ar };

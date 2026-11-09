@@ -506,6 +506,7 @@
     boardReady = true;
     $$('.sw').forEach((s) => { if (s.dataset.c !== 'eraser') s.style.background = s.dataset.c; s.addEventListener('click', () => { color = s.dataset.c; $$('.sw').forEach((x) => x.setAttribute('aria-pressed', String(x === s))); }); });
     $('#board-big').addEventListener('click', () => { boardBig = !boardBig; pinnedId = null; updateSpotlight(); });
+    $('#board-save').addEventListener('click', saveBoard);
 
     // map pointer to board coordinates (canvas uses object-fit: contain)
     const toBoard = (e) => {
@@ -555,6 +556,37 @@
     ctx.restore();
   }
   function clearBoard() { ctx?.clearRect(0, 0, BOARD_W, BOARD_H); }
+
+  // Save the whiteboard as a PNG: white paper, the same light grid, then the drawing on top.
+  function saveBoard() {
+    const out = document.createElement('canvas');
+    out.width = BOARD_W; out.height = BOARD_H;
+    const g = out.getContext('2d');
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, BOARD_W, BOARD_H);
+    g.strokeStyle = 'rgba(185, 201, 236, .5)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 32; x < BOARD_W; x += 32) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, BOARD_H); }
+    for (let y = 32; y < BOARD_H; y += 32) { g.moveTo(0, y + 0.5); g.lineTo(BOARD_W, y + 0.5); }
+    g.stroke();
+    g.drawImage($('#board'), 0, 0);
+    out.toBlob((blob) => {
+      if (!blob) return C.toast('Something went wrong. Try again.');
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}h${p(d.getMinutes())}`;
+      const title = (course?.title || tr('Whiteboard')).replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Cartable - ${title} - ${stamp}.png`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30e3);
+      C.toast('Whiteboard saved to your downloads.');
+    }, 'image/png');
+  }
 
   // ---------- clock / leave ----------
   function tickClock() {

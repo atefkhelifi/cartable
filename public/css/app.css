@@ -486,3 +486,7 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
 .pill-rec { display: inline-flex; align-items: center; gap: .4rem; background: var(--red); color: #fff; }
 .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; animation: rec-blink 1.4s ease-in-out infinite; }
 @keyframes rec-blink { 50% { opacity: .25; } }
+
+/* buttons inside the white side panel use the light style */
+.side .btn-ghost { background: var(--card); border-color: var(--line-2); color: var(--ink); }
+.side .btn-ghost:hover { border-color: var(--ink-3); }

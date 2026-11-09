@@ -13,7 +13,7 @@ whiteboard. Students see their timetable and join with one click.
 **Live classroom**
 - Video and voice calls between the teacher and up to 15 students (peer-to-peer WebRTC)
 - Screen sharing, shown big on everyone's stage automatically
-- Shared whiteboard with colours, an eraser and a "show big" mode
+- Shared whiteboard with colours, an eraser, a "show big" mode and "Save as image" (PNG) for teachers and students
 - Chat, a big "raise hand" button, and emoji reactions
 - Speaking indicator and pinning any video
 - Teacher controls: mute one or everyone, lower a hand, remove someone, lock the class, lock the whiteboard, clear the board, end the class for everyone
