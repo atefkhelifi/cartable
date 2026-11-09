@@ -68,7 +68,7 @@
     err.textContent = '';
     const p = { name, role };
     if (role === 'teacher') {
-      const code = $('#p-code').value;
+      const code = $('#p-code').value.trim();
       const { ok } = await C.api('/api/teacher/verify', { method: 'POST', body: JSON.stringify({ code }) });
       if (!ok) { err.textContent = 'That teacher code is not right. Ask your school for it, or join as a student.'; return; }
       p.teacherCode = code;

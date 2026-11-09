@@ -7,7 +7,8 @@ const express = require('express');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
-const TEACHER_CODE = process.env.TEACHER_CODE || 'teach';
+const TEACHER_CODE = String(process.env.TEACHER_CODE || 'teach').trim();
+const codeOk = (c) => typeof c === 'string' && c.trim() === TEACHER_CODE;
 const DB_FILE = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'db.json');
 
 // ICE servers for WebRTC. STUN is enough on most home networks; school and
@@ -47,10 +48,10 @@ app.get('/healthz', (req, res) => res.send('ok'));
 app.get('/api/config', (req, res) => res.json({ iceServers: ICE_SERVERS }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const isTeacher = (req) => req.get('x-teacher-code') === TEACHER_CODE;
+const isTeacher = (req) => codeOk(req.get('x-teacher-code') || '');
 
 app.post('/api/teacher/verify', (req, res) => {
-  res.json({ ok: req.body && req.body.code === TEACHER_CODE });
+  res.json({ ok: codeOk(req.body && req.body.code) });
 });
 
 app.get('/api/courses', (req, res) => res.json(db.courses));
@@ -122,7 +123,7 @@ io.on('connection', (socket) => {
   socket.on('join', ({ room, name, role, teacherCode }, ack) => {
     if (typeof room !== 'string' || !/^[a-z0-9-]{3,20}$/.test(room)) return ack && ack({ error: 'This class link is not valid.' });
     const r = getRoom(room);
-    const teacher = role === 'teacher' && teacherCode === TEACHER_CODE;
+    const teacher = role === 'teacher' && codeOk(teacherCode);
     if (r.locked && !teacher) return ack && ack({ error: 'The teacher has locked this class. Ask them to unlock it.' });
     if (r.peers.size >= 16) return ack && ack({ error: 'This class is full (16 people max).' });
     roomId = room;
