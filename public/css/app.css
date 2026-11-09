@@ -376,8 +376,8 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .dock-btn:hover { background: var(--stage-3); }
 .dock-btn svg { width: 24px; height: 24px; }
 .dock-btn .slash { display: none; }
-.dock-btn[aria-pressed="false"]:not(#btn-share) { background: var(--red); color: #fff; }
-.dock-btn[aria-pressed="false"]:not(#btn-share) .slash { display: inline; }
+.dock-btn[aria-pressed="false"]:not(#btn-share):not(#btn-rec) { background: var(--red); color: #fff; }
+.dock-btn[aria-pressed="false"]:not(#btn-share):not(#btn-rec) .slash { display: inline; }
 #btn-share[aria-pressed="true"] { background: var(--green); color: #fff; }
 .dock-side-toggle { display: none; }
 
@@ -478,3 +478,11 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
 .timeline li.empty { display: block; }
 /* titles in another script (e.g. an English title in Arabic) keep their own direction */
 .chip, .next-card h2, .day-item h3, .timeline .what b, .week-list b, .room-title h1, .chat-log .bubble { unicode-bidi: plaintext; }
+
+/* ---------- recording ---------- */
+#btn-rec svg circle:last-child { color: var(--red); }
+#btn-rec[aria-pressed="true"] { background: var(--red); color: #fff; }
+#btn-rec[aria-pressed="true"] svg circle:last-child { color: #fff; }
+.pill-rec { display: inline-flex; align-items: center; gap: .4rem; background: var(--red); color: #fff; }
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; animation: rec-blink 1.4s ease-in-out infinite; }
+@keyframes rec-blink { 50% { opacity: .25; } }

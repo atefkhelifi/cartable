@@ -18,6 +18,7 @@ whiteboard. Students see their timetable and join with one click.
 - Speaking indicator and pinning any video
 - Teacher controls: mute one or everyone, lower a hand, remove someone, lock the class, lock the whiteboard, clear the board, end the class for everyone
 - Attendance list of who joined and when
+- Class recording (teacher only): records the class as the teacher sees it, with everyone's voices, and saves an MP4 (or WebM) to the teacher's computer. Everyone sees a red "Recording" badge while it runs. Works in Chrome and Edge on a computer; when Chrome asks, pick the Cartable tab and keep "Also share tab audio" on.
 - Keyboard shortcuts: `M` microphone, `V` camera, `H` raise hand
 
 **Timetable and calendar**
@@ -94,7 +95,7 @@ the mesh for an open-source SFU such as [LiveKit](https://livekit.io) or
 - Sign-in is a simple name plus a shared teacher code. Before using it with real
   children, add proper accounts (for example with your school's SSO) and review
   your local child privacy rules (GDPR, COPPA).
-- Nothing is recorded. Video goes directly between browsers.
+- Video goes directly between browsers. Recordings are only made when the teacher starts one, everyone is told, and the file stays on the teacher's computer (nothing is uploaded). Get parents' consent before recording children, as your local rules require.
 
 ## License
 

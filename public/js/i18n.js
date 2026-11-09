@@ -187,6 +187,19 @@
     'Mute': 'Couper le micro',
     'Remove': 'Retirer',
 
+    // recording
+    "Record": "Enregistrer",
+    "Stop recording": "Arrêter l'enregistrement",
+    "Recording": "Enregistrement",
+    "Recording is not supported in this browser. Use Chrome or Edge on a computer.": "L'enregistrement n'est pas possible dans ce navigateur. Utilisez Chrome ou Edge sur un ordinateur.",
+    "Everyone in the class will see that it is being recorded. The video is saved on this computer only.\n\nStart recording?": "Tout le monde dans le cours verra qu'il est enregistré. La vidéo est sauvegardée uniquement sur cet ordinateur.\n\nCommencer l'enregistrement ?",
+    "Choose this tab and turn on tab audio so students can be heard in the recording.": "Choisissez cet onglet et activez le son de l'onglet pour que les élèves soient entendus.",
+    "Students won't be heard in the recording because tab audio was not shared.": "Les élèves ne seront pas entendus : le son de l'onglet n'a pas été partagé.",
+    "{name} started recording the class.": "{name} a commencé à enregistrer le cours.",
+    "Recording stopped.": "L'enregistrement est terminé.",
+    "This class is being recorded.": "Ce cours est enregistré.",
+    "Recording saved to your downloads.": "Enregistrement sauvegardé dans vos téléchargements.",
+
     // errors from the server
     'Something went wrong. Try again.': 'Un problème est survenu. Réessayez.',
     'Only teachers can create classes.': 'Seuls les enseignants peuvent créer des cours.',
@@ -385,6 +398,17 @@
     "This class link is not valid.": "رابط الحصة هذا غير صالح.",
     "The teacher has locked this class. Ask them to unlock it.": "أقفل المعلّم هذه الحصة. اطلب منه فتحها.",
     "This class is full (16 people max).": "هذه الحصة ممتلئة (16 شخصًا كحد أقصى).",
+    "Record": "تسجيل",
+    "Stop recording": "إيقاف التسجيل",
+    "Recording": "جارٍ التسجيل",
+    "Recording is not supported in this browser. Use Chrome or Edge on a computer.": "التسجيل غير متاح في هذا المتصفح. استعمل Chrome أو Edge على حاسوب.",
+    "Everyone in the class will see that it is being recorded. The video is saved on this computer only.\n\nStart recording?": "سيرى جميع المشاركين أن الحصة مسجّلة. يُحفظ الفيديو على هذا الحاسوب فقط.\n\nهل تريد بدء التسجيل؟",
+    "Choose this tab and turn on tab audio so students can be heard in the recording.": "اختر علامة التبويب هذه وفعّل صوتها ليُسمع صوت التلاميذ في التسجيل.",
+    "Students won't be heard in the recording because tab audio was not shared.": "لن يُسمع صوت التلاميذ في التسجيل لأن صوت علامة التبويب لم تتم مشاركته.",
+    "{name} started recording the class.": "بدأ {name} تسجيل الحصة.",
+    "Recording stopped.": "توقف التسجيل.",
+    "This class is being recorded.": "هذه الحصة مسجّلة.",
+    "Recording saved to your downloads.": "تم حفظ التسجيل في مجلد التنزيلات.",
   };
 
   const DICTS = { fr, ar };

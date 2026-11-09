@@ -111,7 +111,7 @@ const io = new Server(server, { maxHttpBufferSize: 1e6 });
 // room -> { peers: Map<socketId, {name, role, hand, mic, cam}>, locked, boardLocked, strokes: [] }
 const rooms = new Map();
 function getRoom(id) {
-  if (!rooms.has(id)) rooms.set(id, { peers: new Map(), locked: false, boardLocked: false, strokes: [] });
+  if (!rooms.has(id)) rooms.set(id, { peers: new Map(), locked: false, boardLocked: false, strokes: [], recording: null });
   return rooms.get(id);
 }
 const peerList = (r) => [...r.peers].map(([id, p]) => ({ id, ...p }));
@@ -134,7 +134,7 @@ io.on('connection', (socket) => {
     (db.attendance[room] = db.attendance[room] || []).push({ name: me.name, role: me.role, at: new Date().toISOString() });
     saveDb();
     socket.to(room).emit('peer-joined', { id: socket.id, ...me });
-    ack && ack({ ok: true, id: socket.id, role: me.role, peers: others, strokes: r.strokes, locked: r.locked, boardLocked: r.boardLocked });
+    ack && ack({ ok: true, id: socket.id, role: me.role, peers: others, strokes: r.strokes, locked: r.locked, boardLocked: r.boardLocked, recording: !!r.recording });
   });
 
   // relay WebRTC signals to one peer
@@ -182,6 +182,8 @@ io.on('connection', (socket) => {
       case 'lower-hand': if (r.peers.has(target)) io.to(target).emit('force-lower-hand'); break;
       case 'remove': if (r.peers.has(target)) { io.to(target).emit('removed'); io.sockets.sockets.get(target)?.disconnect(true); } break;
       case 'end': io.to(roomId).emit('ended'); break;
+      case 'record-start': r.recording = socket.id; io.to(roomId).emit('recording', { on: true, name: me.name }); break;
+      case 'record-stop': if (r.recording) { r.recording = null; io.to(roomId).emit('recording', { on: false }); } break;
     }
   });
 
@@ -189,6 +191,7 @@ io.on('connection', (socket) => {
     if (!roomId) return;
     const r = getRoom(roomId);
     r.peers.delete(socket.id);
+    if (r.recording === socket.id) { r.recording = null; socket.to(roomId).emit('recording', { on: false }); }
     socket.to(roomId).emit('peer-left', { id: socket.id });
     if (r.peers.size === 0) rooms.delete(roomId);
   });

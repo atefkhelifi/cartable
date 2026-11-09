@@ -131,6 +131,7 @@
       </div>
       <div class="room-head-actions">
         <button class="btn btn-ghost btn-sm" id="btn-copy-link" type="button">Copy invite link</button>
+        <span class="pill pill-rec" id="rec-pill" hidden><i class="rec-dot" aria-hidden="true"></i><span>Recording</span></span>
         <span class="pill" id="room-lock-pill" hidden>Locked</span>
         <span class="clock" id="room-clock">00:00</span>
       </div>
@@ -204,6 +205,10 @@
       <button class="hand-btn" id="btn-hand" type="button" aria-pressed="false">
         <span class="hand-emoji" aria-hidden="true">✋</span>
         <span id="hand-label">Raise hand</span>
+      </button>
+      <button class="dock-btn teacher-only" id="btn-rec" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>
+        <span id="rec-label">Record</span>
       </button>
       <div class="react-wrap">
         <button class="dock-btn" id="btn-react" type="button" aria-expanded="false">

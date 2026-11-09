@@ -15,6 +15,7 @@
   let joinedAt = 0, clockTimer, speakTimer, audioCtx;
   let boardLocked = false, roomLocked = false;
   let spotId = null, pinnedId = null, boardBig = false;
+  let rec = null; // teacher's recording: { recorder, chunks, display, ac, type, startedAt }
   const peers = new Map(); // id -> { pc, stream, info, tile, pending: [], analyser }
 
   // ---------- media ----------
@@ -87,6 +88,7 @@
         addTile('me', { name: C.profile.name, role: myRole, mic: micOn, cam: camOn, hand: false }, camStream, true);
         sendState();
         applyFlags(res);
+        setRecording(res.recording, null, true);
         res.strokes.forEach(drawStroke);
         res.peers.forEach((p) => { createPeer(p.id, p); call(p.id); });
         joinedAt = Date.now();
@@ -115,6 +117,7 @@
     socket.on('draw', drawStroke);
     socket.on('clear-board', clearBoard);
     socket.on('room-flags', applyFlags);
+    socket.on('recording', ({ on, name }) => setRecording(on, name));
     socket.on('force-mute', () => { if (micOn) { toggleMic(); C.toast('The teacher muted your microphone'); } });
     socket.on('force-lower-hand', () => { if (hand) { toggleHand(); C.toast('The teacher lowered your hand'); } });
     socket.on('removed', () => { C.toast('The teacher removed you from the class.'); R.leave(); });
@@ -313,6 +316,7 @@
   $('#btn-cam').addEventListener('click', toggleCam);
   $('#btn-hand').addEventListener('click', toggleHand);
   $('#btn-share').addEventListener('click', toggleShare);
+  $('#btn-rec').addEventListener('click', () => (rec ? stopRecording() : startRecording()));
   $('#btn-leave').addEventListener('click', () => R.leave());
   $('#btn-end').addEventListener('click', () => { if (confirm(tr('End the class for everyone?'))) socket.emit('teacher', { action: 'end' }); });
   $('#btn-side').addEventListener('click', () => $('#side').classList.toggle('open'));
@@ -335,6 +339,89 @@
     if (e.key === 'v') toggleCam();
     if (e.key === 'h') toggleHand();
   });
+
+  // ---------- recording (teacher only, saved on the teacher's computer) ----------
+  function setRecording(on, name, onJoin) {
+    $('#rec-pill').hidden = !on;
+    if (onJoin) { if (on) { sys(tr('This class is being recorded.')); C.toast('This class is being recorded.'); } return; }
+    if (on) sys(tr('{name} started recording the class.', { name: name || '' }));
+    else sys(tr('Recording stopped.'));
+  }
+
+  function pickType() {
+    const types = ['video/mp4;codecs=avc1,opus', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    return types.find((x) => MediaRecorder.isTypeSupported(x)) || '';
+  }
+
+  async function startRecording() {
+    if (myRole !== 'teacher' || rec) return;
+    if (!window.MediaRecorder || !navigator.mediaDevices?.getDisplayMedia) return C.toast('Recording is not supported in this browser. Use Chrome or Edge on a computer.');
+    if (!confirm(tr('Everyone in the class will see that it is being recorded. The video is saved on this computer only.\n\nStart recording?'))) return;
+    C.toast('Choose this tab and turn on tab audio so students can be heard in the recording.');
+    let display;
+    try {
+      display = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'browser', frameRate: 24 },
+        audio: { suppressLocalAudioPlayback: false },
+        preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude', systemAudio: 'include',
+      });
+    } catch { return; } // cancelled
+    if (!R.active) { display.getTracks().forEach((x) => x.stop()); return; }
+
+    // one audio track: what the tab plays (students) + the teacher's microphone
+    const ac = new AudioContext();
+    const dest = ac.createMediaStreamDestination();
+    const tabAudio = display.getAudioTracks();
+    if (tabAudio.length) ac.createMediaStreamSource(new MediaStream(tabAudio)).connect(dest);
+    else setTimeout(() => C.toast("Students won't be heard in the recording because tab audio was not shared."), 3500);
+    if (audioTrack()) ac.createMediaStreamSource(new MediaStream([audioTrack()])).connect(dest);
+
+    const stream = new MediaStream([display.getVideoTracks()[0], ...dest.stream.getAudioTracks()]);
+    const type = pickType();
+    let recorder;
+    try { recorder = new MediaRecorder(stream, { ...(type && { mimeType: type }), videoBitsPerSecond: 1_500_000, audioBitsPerSecond: 96_000 }); }
+    catch { display.getTracks().forEach((x) => x.stop()); ac.close(); return C.toast('Recording is not supported in this browser. Use Chrome or Edge on a computer.'); }
+
+    const chunks = [];
+    rec = { recorder, chunks, display, ac, type: recorder.mimeType || type || 'video/webm', startedAt: new Date(), title: course?.title || tr('Live class') };
+    const mine = rec;
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => saveRecording(mine);
+    recorder.start(5000);
+    display.getVideoTracks()[0].addEventListener('ended', stopRecording); // "Stop sharing" in the browser bar
+    setPressed('#btn-rec', true);
+    $('#rec-label').textContent = tr('Stop recording');
+    socket?.emit('teacher', { action: 'record-start' });
+  }
+
+  function stopRecording() {
+    if (!rec) return;
+    const r = rec;
+    rec = null;
+    if (r.recorder.state !== 'inactive') r.recorder.stop();
+    r.display.getTracks().forEach((x) => x.stop());
+    setPressed('#btn-rec', false);
+    $('#rec-label').textContent = tr('Record');
+    socket?.emit('teacher', { action: 'record-stop' });
+  }
+
+  function saveRecording(r) {
+    r.ac.close().catch(() => {});
+    if (!r.chunks.length) return;
+    const blob = new Blob(r.chunks, { type: r.type.split(';')[0] });
+    const ext = r.type.includes('mp4') ? 'mp4' : 'webm';
+    const d = r.startedAt;
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
+    const safe = r.title.replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) || 'class';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Cartable - ${safe} - ${stamp}.${ext}`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60e3);
+    C.toast('Recording saved to your downloads.');
+  }
 
   // ---------- side tabs ----------
   function selectTab(name) {
@@ -481,6 +568,8 @@
   R.leave = (silent) => {
     if (!R.active && !silent) { location.hash = '#/today'; return; }
     R.active = false;
+    stopRecording();
+    $('#rec-pill').hidden = true;
     clearInterval(clockTimer); clearInterval(speakTimer);
     peers.forEach((_, id) => removePeer(id));
     socket?.disconnect(); socket = null;
@@ -494,5 +583,8 @@
     document.body.classList.toggle('is-teacher', C.profile?.role === 'teacher');
     if (!silent) location.hash = '#/today';
   };
-  window.addEventListener('beforeunload', () => socket?.disconnect());
+  window.addEventListener('beforeunload', (e) => {
+    if (rec) { e.preventDefault(); e.returnValue = ''; return; } // ask before losing a recording
+    socket?.disconnect();
+  });
 })();
