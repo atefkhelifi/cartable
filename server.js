@@ -86,11 +86,69 @@ sql.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS class_files_room ON class_files(room);
+
+  -- class lists, students and their codes (codes are stored as keyed hashes only)
+  CREATE TABLE IF NOT EXISTS rosters (
+    id TEXT PRIMARY KEY,
+    teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS students (
+    id TEXT PRIMARY KEY,
+    roster_id TEXT NOT NULL REFERENCES rosters(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    code_hash TEXT NOT NULL UNIQUE,
+    parent_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS students_roster ON students(roster_id);
+  CREATE TABLE IF NOT EXISTS student_sessions (
+    token_hash TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+
+  -- homework, what students hand in, and files attached to either
+  CREATE TABLE IF NOT EXISTS homework (
+    id TEXT PRIMARY KEY,
+    teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+    roster_id TEXT NOT NULL REFERENCES rosters(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    instructions TEXT NOT NULL DEFAULT '',
+    due TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS homework_roster ON homework(roster_id);
+  CREATE TABLE IF NOT EXISTS submissions (
+    id TEXT PRIMARY KEY,
+    homework_id TEXT NOT NULL REFERENCES homework(id) ON DELETE CASCADE,
+    student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    text TEXT NOT NULL DEFAULT '',
+    submitted_at INTEGER,
+    mark TEXT NOT NULL DEFAULT '',
+    feedback TEXT NOT NULL DEFAULT '',
+    marked_at INTEGER,
+    UNIQUE (homework_id, student_id)
+  );
+  CREATE TABLE IF NOT EXISTS hw_files (
+    id TEXT PRIMARY KEY,
+    homework_id TEXT NOT NULL REFERENCES homework(id) ON DELETE CASCADE,
+    submission_id TEXT REFERENCES submissions(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    ext TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
 // columns added after 1.1
-if (!sql.prepare('PRAGMA table_info(courses)').all().some((c) => c.name === 'waiting_room')) {
-  sql.exec('ALTER TABLE courses ADD COLUMN waiting_room INTEGER NOT NULL DEFAULT 0');
-}
+const addColumn = (table, column, def) => {
+  if (!sql.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column)) sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+};
+addColumn('courses', 'waiting_room', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('courses', 'roster_id', 'TEXT REFERENCES rosters(id) ON DELETE SET NULL');
+addColumn('attendance', 'student_id', 'TEXT');
 
 const q = {
   teacherByUser: sql.prepare('SELECT * FROM teachers WHERE username = ?'),
@@ -100,13 +158,17 @@ const q = {
   addSession: sql.prepare('INSERT INTO sessions (token_hash, teacher_id, expires_at) VALUES (?, ?, ?)'),
   session: sql.prepare('SELECT t.id, t.username, t.name FROM sessions s JOIN teachers t ON t.id = s.teacher_id WHERE s.token_hash = ? AND s.expires_at > ?'),
   delSession: sql.prepare('DELETE FROM sessions WHERE token_hash = ?'),
-  addCourse: sql.prepare(`INSERT INTO courses (id, series, room, teacher_id, title, date, start_time, end_time, subject, grp, teacher, notes, color, waiting_room)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-  editCourse: sql.prepare(`UPDATE courses SET title = ?, date = ?, start_time = ?, end_time = ?, subject = ?, grp = ?, notes = ?, color = ?, waiting_room = ?
+  addCourse: sql.prepare(`INSERT INTO courses (id, series, room, teacher_id, title, date, start_time, end_time, subject, grp, teacher, notes, color, waiting_room, roster_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  editCourse: sql.prepare(`UPDATE courses SET title = ?, date = ?, start_time = ?, end_time = ?, subject = ?, grp = ?, notes = ?, color = ?, waiting_room = ?, roster_id = ?
     WHERE id = ? AND teacher_id = ?`),
-  editSeries: sql.prepare(`UPDATE courses SET title = ?, start_time = ?, end_time = ?, subject = ?, grp = ?, notes = ?, color = ?, waiting_room = ?
+  editSeries: sql.prepare(`UPDATE courses SET title = ?, start_time = ?, end_time = ?, subject = ?, grp = ?, notes = ?, color = ?, waiting_room = ?, roster_id = ?
     WHERE series = ? AND teacher_id = ?`),
   coursesByTeacher: sql.prepare('SELECT * FROM courses WHERE teacher_id = ? ORDER BY date, start_time'),
+  coursesByRoster: sql.prepare('SELECT * FROM courses WHERE roster_id = ? ORDER BY date, start_time'),
+  pupilSession: sql.prepare(`SELECT s.kind, st.id, st.name, st.roster_id AS rosterId, r.name AS rosterName, r.teacher_id AS teacherId
+    FROM student_sessions s JOIN students st ON st.id = s.student_id JOIN rosters r ON r.id = st.roster_id
+    WHERE s.token_hash = ? AND s.expires_at > ?`),
   coursesByRoom: sql.prepare('SELECT * FROM courses WHERE room = ? ORDER BY date, start_time'),
   course: sql.prepare('SELECT * FROM courses WHERE id = ?'),
   delCourse: sql.prepare('DELETE FROM courses WHERE id = ? AND teacher_id = ?'),
@@ -114,8 +176,8 @@ const q = {
   courseOwner: sql.prepare('SELECT teacher_id, MAX(waiting_room) AS waiting FROM courses WHERE room = ? GROUP BY teacher_id LIMIT 1'),
   addInstant: sql.prepare('INSERT INTO instant_rooms (room, teacher_id, expires_at) VALUES (?, ?, ?)'),
   instantRoom: sql.prepare('SELECT teacher_id, expires_at FROM instant_rooms WHERE room = ?'),
-  addAttendance: sql.prepare('INSERT INTO attendance (room, name, role, at) VALUES (?, ?, ?, ?)'),
-  attendance: sql.prepare('SELECT name, role, at FROM attendance WHERE room = ? ORDER BY at'),
+  addAttendance: sql.prepare('INSERT INTO attendance (room, name, role, at, student_id) VALUES (?, ?, ?, ?, ?)'),
+  attendance: sql.prepare('SELECT name, role, at, student_id FROM attendance WHERE room = ? ORDER BY at'),
 };
 
 function tx(fn) {
@@ -133,10 +195,10 @@ if (fs.existsSync(OLD_DB)) {
       for (const c of old.courses || []) {
         if (q.course.get(c.id)) continue;
         q.addCourse.run(c.id, c.series || c.id, c.room, null, c.title || '', c.date, c.start, c.end,
-          c.subject || '', c.group || '', c.teacher || '', c.notes || '', c.color || 'blue', 0);
+          c.subject || '', c.group || '', c.teacher || '', c.notes || '', c.color || 'blue', 0, null);
       }
       for (const [room, list] of Object.entries(old.attendance || {})) {
-        for (const a of list) q.addAttendance.run(room, a.name || '', a.role || 'student', Date.parse(a.at) || Date.now());
+        for (const a of list) q.addAttendance.run(room, a.name || '', a.role || 'student', Date.parse(a.at) || Date.now(), null);
       }
     });
     fs.renameSync(OLD_DB, OLD_DB + '.migrated');
@@ -167,13 +229,19 @@ function prune() {
   sql.prepare('DELETE FROM instant_rooms WHERE expires_at < ?').run(now - ATTENDANCE_DAYS * DAY);
   sql.prepare('DELETE FROM attendance WHERE at < ?').run(now - ATTENDANCE_DAYS * DAY);
   dropOrphanFiles();
+  // files on disk that no table knows about (left over from a crash or a delete)
+  const known = new Set([...sql.prepare('SELECT id FROM class_files').all(), ...sql.prepare('SELECT id FROM hw_files').all()].map((f) => f.id));
+  for (const name of fs.readdirSync(FILES_DIR)) {
+    if (known.has(name)) continue;
+    try { if (now - fs.statSync(path.join(FILES_DIR, name)).mtimeMs > 3600e3) fs.rmSync(path.join(FILES_DIR, name), { force: true }); } catch {}
+  }
 }
 prune();
 setInterval(prune, 6 * 3600e3).unref();
 
 const toCourse = (r) => ({
   id: r.id, series: r.series, room: r.room, title: r.title, date: r.date, start: r.start_time, end: r.end_time,
-  subject: r.subject, group: r.grp, teacher: r.teacher, notes: r.notes, color: r.color, waitingRoom: !!r.waiting_room,
+  subject: r.subject, group: r.grp, teacher: r.teacher, notes: r.notes, color: r.color, waitingRoom: !!r.waiting_room, rosterId: r.roster_id || null,
 });
 
 // Who owns a room code? Returns { teacherId, open, waiting } or null if the code is unknown.
@@ -215,6 +283,28 @@ function teacherFromToken(token) {
   if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null;
   return q.session.get(sha256(token), Date.now()) || null;
 }
+// A student or parent signed in with their code: { kind: 'student' | 'parent', id, name, rosterId, rosterName, teacherId }
+function pupilFromToken(token) {
+  if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null;
+  return q.pupilSession.get(sha256(token), Date.now()) || null;
+}
+
+// ---------- student and parent codes ----------
+// Student codes look like "k7pm-w3xa", parent codes like "p-x4kq9-m2rtw". They are random,
+// stored only as an HMAC (so the database alone does not reveal them), and shown to the teacher once.
+const CODE_SECRET = process.env.CODE_SECRET || (() => {
+  const f = path.join(DATA_DIR, 'secret.key');
+  try { return fs.readFileSync(f, 'utf8').trim(); } catch {}
+  const s = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync(f, s, { mode: 0o600 });
+  return s;
+})();
+const CODE_ABC = 'abcdefghjkmnpqrstuvwxyz23456789';
+const randChars = (n) => Array.from({ length: n }, () => CODE_ABC[crypto.randomInt(CODE_ABC.length)]).join('');
+const newStudentCode = () => `${randChars(4)}-${randChars(4)}`;
+const newParentCode = () => `p-${randChars(5)}-${randChars(5)}`;
+const normCode = (c) => String(c || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const codeHash = (c) => crypto.createHmac('sha256', CODE_SECRET).update(normCode(c)).digest('hex');
 
 // Tiny fixed-window rate limiter: allow `max` hits per `windowMs` for each key.
 function limiter(max, windowMs) {
@@ -227,6 +317,21 @@ function limiter(max, windowMs) {
     return ++h.n <= max;
   };
 }
+// Counts only failures, so a whole class signing in from one school address is not blocked.
+function failCounter(max, windowMs) {
+  const hits = new Map();
+  setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (v.reset < now) hits.delete(k); }, windowMs).unref();
+  return {
+    blocked: (key) => { const h = hits.get(key); return !!h && h.reset > Date.now() && h.n >= max; },
+    fail: (key) => {
+      const now = Date.now();
+      let h = hits.get(key);
+      if (!h || h.reset < now) { h = { n: 0, reset: now + windowMs }; hits.set(key, h); }
+      h.n++;
+    },
+  };
+}
+const codeFails = failCounter(20, 15 * 60e3);
 const authLimit = limiter(10, 15 * 60e3);   // sign-in / sign-up attempts per IP
 const roomLimit = limiter(60, 15 * 60e3);   // unknown room codes tried per IP
 
@@ -239,8 +344,14 @@ app.get('/api/config', (req, res) => res.json({ iceServers: ICE_SERVERS }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const bearer = (req) => (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
-app.use('/api', (req, res, next) => { req.teacher = teacherFromToken(bearer(req)); next(); });
+app.use('/api', (req, res, next) => {
+  const token = bearer(req);
+  req.teacher = teacherFromToken(token);
+  req.pupil = req.teacher ? null : pupilFromToken(token);
+  next();
+});
 const needTeacher = (req, res, next) => (req.teacher ? next() : res.status(401).json({ error: 'Please sign in as a teacher.' }));
+const needSignedIn = (req, res, next) => (req.teacher || req.pupil ? next() : res.status(401).json({ error: 'Please sign in again.' }));
 
 function startSession(res, t) {
   const token = crypto.randomBytes(32).toString('base64url');
@@ -279,20 +390,57 @@ app.post('/api/auth/login', (req, res) => {
   startSession(res, t);
 });
 
+// Students and parents sign in with the code their teacher gave them.
+app.post('/api/auth/code', (req, res) => {
+  if (codeFails.blocked(req.ip)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+  const code = normCode(req.body && req.body.code);
+  const kind = code.length === 8 ? 'student' : code.length === 11 && code[0] === 'p' ? 'parent' : null;
+  const st = kind && sql.prepare(`SELECT st.*, r.name AS roster_name FROM students st JOIN rosters r ON r.id = st.roster_id
+    WHERE ${kind === 'student' ? 'st.code_hash' : 'st.parent_hash'} = ?`).get(codeHash(code));
+  if (!st) {
+    codeFails.fail(req.ip);
+    return res.status(401).json({ error: 'That code is not right. Check it with your teacher.' });
+  }
+  const token = crypto.randomBytes(32).toString('base64url');
+  sql.prepare('INSERT INTO student_sessions (token_hash, student_id, kind, expires_at) VALUES (?, ?, ?, ?)')
+    .run(sha256(token), st.id, kind, Date.now() + (kind === 'parent' ? 180 : 60) * DAY);
+  res.json({ token, role: kind, name: st.name, studentId: st.id, rosterName: st.roster_name });
+});
+
 app.post('/api/auth/logout', (req, res) => {
   const token = bearer(req);
-  if (token) q.delSession.run(sha256(token));
+  if (token) {
+    q.delSession.run(sha256(token));
+    sql.prepare('DELETE FROM student_sessions WHERE token_hash = ?').run(sha256(token));
+  }
   res.json({ ok: true });
 });
 
-app.get('/api/auth/me', needTeacher, (req, res) => res.json({ teacher: req.teacher }));
+app.get('/api/auth/me', needSignedIn, (req, res) => {
+  if (req.teacher) return res.json({ role: 'teacher', teacher: req.teacher });
+  res.json({ role: req.pupil.kind, name: req.pupil.name, rosterName: req.pupil.rosterName });
+});
 
-// Teachers get their own classes. Students get only the classes whose codes they know.
+// Teachers get their own classes. Students get their class list's classes plus any class whose
+// code they have opened; parents get their child's class list's classes.
 app.get('/api/courses', (req, res) => {
   if (req.teacher) return res.json(q.coursesByTeacher.all(req.teacher.id).map(toCourse));
-  const rooms = [...new Set(String(req.query.rooms || '').split(',').map((s) => s.trim()).filter((s) => ROOM_RE.test(s)))].slice(0, 50);
-  res.json(rooms.flatMap((r) => q.coursesByRoom.all(r)).map(toCourse));
+  const list = req.pupil ? q.coursesByRoster.all(req.pupil.rosterId) : [];
+  if (req.pupil?.kind !== 'parent') {
+    const known = new Set(list.map((c) => c.id));
+    const rooms = [...new Set(String(req.query.rooms || '').split(',').map((s) => s.trim()).filter((s) => ROOM_RE.test(s)))].slice(0, 50);
+    for (const c of rooms.flatMap((r) => q.coursesByRoom.all(r))) if (!known.has(c.id)) list.push(c);
+  }
+  res.json(list.map(toCourse));
 });
+
+// A class list chosen in the class form must belong to this teacher.
+function ownRosterId(req, b) {
+  const id = b && typeof b.rosterId === 'string' ? b.rosterId : '';
+  if (!id) return null;
+  const r = sql.prepare('SELECT id FROM rosters WHERE id = ? AND teacher_id = ?').get(id, req.teacher.id);
+  return r ? r.id : null;
+}
 
 // Check the fields of a class form. Returns { error } or the cleaned fields.
 function courseFields(b) {
@@ -317,13 +465,15 @@ app.post('/api/courses', needTeacher, (req, res) => {
   const repeat = Math.min(Math.max(parseInt(req.body.repeatWeeks, 10) || 1, 1), 40);
   const series = newId();
   const room = freeRoomCode();
+  const rosterId = ownRosterId(req, req.body);
+  f.rosterId = rosterId;
   const created = [];
   tx(() => {
     for (let w = 0; w < repeat; w++) {
       const d = new Date(f.date + 'T00:00:00Z');
       d.setUTCDate(d.getUTCDate() + 7 * w);
       const c = { ...f, id: newId(), series, room, date: d.toISOString().slice(0, 10), teacher: req.teacher.name };
-      q.addCourse.run(c.id, series, room, req.teacher.id, c.title, c.date, c.start, c.end, c.subject, c.group, c.teacher, c.notes, c.color, c.waitingRoom ? 1 : 0);
+      q.addCourse.run(c.id, series, room, req.teacher.id, c.title, c.date, c.start, c.end, c.subject, c.group, c.teacher, c.notes, c.color, c.waitingRoom ? 1 : 0, rosterId);
       created.push(c);
     }
   });
@@ -338,8 +488,9 @@ app.patch('/api/courses/:id', needTeacher, (req, res) => {
   const f = courseFields({ date: c.date, ...req.body, ...(all ? { date: c.date } : {}) });
   if (f.error) return res.status(400).json(f);
   const w = f.waitingRoom ? 1 : 0;
-  if (all) q.editSeries.run(f.title, f.start, f.end, f.subject, f.group, f.notes, f.color, w, c.series, req.teacher.id);
-  else q.editCourse.run(f.title, f.date, f.start, f.end, f.subject, f.group, f.notes, f.color, w, c.id, req.teacher.id);
+  const rosterId = ownRosterId(req, req.body);
+  if (all) q.editSeries.run(f.title, f.start, f.end, f.subject, f.group, f.notes, f.color, w, rosterId, c.series, req.teacher.id);
+  else q.editCourse.run(f.title, f.date, f.start, f.end, f.subject, f.group, f.notes, f.color, w, rosterId, c.id, req.teacher.id);
   res.json({ ok: true });
 });
 
@@ -355,7 +506,7 @@ app.delete('/api/courses/:id', needTeacher, (req, res) => {
 app.get('/api/attendance/:room', needTeacher, (req, res) => {
   const info = roomInfo(req.params.room);
   if (!info || info.teacherId !== req.teacher.id) return res.status(403).json({ error: 'Only the class teacher can see attendance.' });
-  res.json(q.attendance.all(req.params.room).map((a) => ({ name: a.name, role: a.role, at: new Date(a.at).toISOString() })));
+  res.json(q.attendance.all(req.params.room).map((a) => ({ name: a.name, role: a.role, at: new Date(a.at).toISOString(), verified: !!a.student_id })));
 });
 
 // "Start a class now": a room that lives for a few hours.
@@ -416,6 +567,27 @@ const FILE_TYPES = {
 const MAX_FILE = 10 * 1024 * 1024, MAX_ROOM_FILES = 100 * 1024 * 1024;
 const uploadLimit = limiter(60, 15 * 60e3);
 const fileRow = (f) => ({ id: f.id, name: f.name, size: f.size, at: new Date(f.created_at).toISOString() });
+// Check an uploaded file (raw body, name in the x-file-name header). Returns { error } or { name, ext, buf }.
+function readUpload(req) {
+  let name = '';
+  try { name = decodeURIComponent(String(req.get('x-file-name') || '')); } catch {}
+  name = name.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(-120);
+  const ext = (name.match(/\.([a-z0-9]{1,5})$/i) || [])[1]?.toLowerCase();
+  if (!name || !ext || !FILE_TYPES[ext]) return { error: 'This kind of file cannot be shared. Use a PDF, a picture, an office document, a sound or a video.' };
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) return { error: 'That file is empty.' };
+  return { name, ext, buf };
+}
+function sendStoredFile(res, f) {
+  res.set({
+    'content-type': FILE_TYPES[f.ext] || 'application/octet-stream',
+    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'; sandbox",
+    'cache-control': 'private, max-age=86400',
+  });
+  res.sendFile(filePath(f.id), (err) => { if (err && !res.headersSent) res.status(404).json({ error: 'File not found.' }); });
+}
 
 app.get('/api/rooms/:room/files', (req, res) => {
   const room = req.params.room;
@@ -433,13 +605,9 @@ app.post('/api/rooms/:room/files', needTeacher, (req, res, next) => {
   next();
 }, express.raw({ type: () => true, limit: MAX_FILE }), (req, res) => {
   const room = req.params.room;
-  let name = '';
-  try { name = decodeURIComponent(String(req.get('x-file-name') || '')); } catch {}
-  name = name.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(-120);
-  const ext = (name.match(/\.([a-z0-9]{1,5})$/i) || [])[1]?.toLowerCase();
-  if (!name || !ext || !FILE_TYPES[ext]) return res.status(400).json({ error: 'This kind of file cannot be shared. Use a PDF, a picture, an office document, a sound or a video.' });
-  const buf = req.body;
-  if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'That file is empty.' });
+  const up = readUpload(req);
+  if (up.error) return res.status(400).json(up);
+  const { name, ext, buf } = up;
   const used = sql.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM class_files WHERE room = ?').get(room).n;
   if (used + buf.length > MAX_ROOM_FILES) return res.status(413).json({ error: 'This class has no space left for files. Delete some old ones first.' });
   const id = newId();
@@ -454,14 +622,7 @@ app.post('/api/rooms/:room/files', needTeacher, (req, res, next) => {
 app.get('/api/files/:id', (req, res) => {
   const f = /^[0-9a-f]{16}$/.test(req.params.id) && sql.prepare('SELECT * FROM class_files WHERE id = ?').get(req.params.id);
   if (!f) return res.status(404).json({ error: 'File not found.' });
-  res.set({
-    'content-type': FILE_TYPES[f.ext] || 'application/octet-stream',
-    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`,
-    'x-content-type-options': 'nosniff',
-    'content-security-policy': "default-src 'none'; sandbox",
-    'cache-control': 'private, max-age=86400',
-  });
-  res.sendFile(filePath(f.id), (err) => { if (err && !res.headersSent) res.status(404).json({ error: 'File not found.' }); });
+  sendStoredFile(res, f);
 });
 
 app.delete('/api/files/:id', needTeacher, (req, res) => {
@@ -470,6 +631,285 @@ app.delete('/api/files/:id', needTeacher, (req, res) => {
   deleteFiles([f]);
   io.to(f.room).emit('files-changed', {});
   res.json({ ok: true });
+});
+
+// ---------- class lists (rosters) ----------
+const cleanName = (s, max) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const myRoster = (req, id) => sql.prepare('SELECT * FROM rosters WHERE id = ? AND teacher_id = ?').get(String(id), req.teacher.id);
+const rosterFileIds = (rosterId) => sql.prepare('SELECT f.id FROM hw_files f JOIN homework h ON h.id = f.homework_id WHERE h.roster_id = ?').all(rosterId);
+const rmFiles = (rows) => rows.forEach((f) => fs.rm(filePath(f.id), { force: true }, () => {}));
+
+// Give a student fresh codes. Old codes stop working and their sessions end.
+function issueCodes(studentId, which) {
+  const out = {};
+  for (let tries = 0; tries < 5; tries++) {
+    try {
+      if (which !== 'parent') { out.code = newStudentCode(); sql.prepare('UPDATE students SET code_hash = ? WHERE id = ?').run(codeHash(out.code), studentId); }
+      if (which !== 'student') { out.parentCode = newParentCode(); sql.prepare('UPDATE students SET parent_hash = ? WHERE id = ?').run(codeHash(out.parentCode), studentId); }
+      break;
+    } catch (e) { if (!/UNIQUE/.test(e.message)) throw e; } // astronomically rare: try another code
+  }
+  if (which === 'both') sql.prepare('DELETE FROM student_sessions WHERE student_id = ?').run(studentId);
+  else sql.prepare('DELETE FROM student_sessions WHERE student_id = ? AND kind = ?').run(studentId, which);
+  return out;
+}
+
+app.get('/api/rosters', needTeacher, (req, res) => {
+  res.json(sql.prepare(`SELECT r.id, r.name, (SELECT COUNT(*) FROM students s WHERE s.roster_id = r.id) AS students
+    FROM rosters r WHERE r.teacher_id = ? ORDER BY r.name COLLATE NOCASE`).all(req.teacher.id));
+});
+app.post('/api/rosters', needTeacher, (req, res) => {
+  const name = cleanName(req.body?.name, 60);
+  if (!name) return res.status(400).json({ error: 'Give the class list a name.' });
+  const id = newId();
+  sql.prepare('INSERT INTO rosters (id, teacher_id, name, created_at) VALUES (?, ?, ?, ?)').run(id, req.teacher.id, name, Date.now());
+  res.status(201).json({ id, name, students: 0 });
+});
+app.patch('/api/rosters/:id', needTeacher, (req, res) => {
+  const r = myRoster(req, req.params.id);
+  const name = cleanName(req.body?.name, 60);
+  if (!r) return res.status(404).json({ error: 'Class list not found.' });
+  if (!name) return res.status(400).json({ error: 'Give the class list a name.' });
+  sql.prepare('UPDATE rosters SET name = ? WHERE id = ?').run(name, r.id);
+  res.json({ ok: true });
+});
+app.delete('/api/rosters/:id', needTeacher, (req, res) => {
+  const r = myRoster(req, req.params.id);
+  if (!r) return res.status(404).json({ error: 'Class list not found.' });
+  rmFiles(rosterFileIds(r.id));
+  sql.prepare('DELETE FROM rosters WHERE id = ?').run(r.id); // students, homework and work handed in go with it
+  res.json({ ok: true });
+});
+
+app.get('/api/rosters/:id/students', needTeacher, (req, res) => {
+  const r = myRoster(req, req.params.id);
+  if (!r) return res.status(404).json({ error: 'Class list not found.' });
+  res.json(sql.prepare(`SELECT s.id, s.name,
+      (SELECT MAX(at) FROM attendance a WHERE a.student_id = s.id) AS lastSeen
+    FROM students s WHERE s.roster_id = ? ORDER BY s.name COLLATE NOCASE`).all(r.id)
+    .map((s) => ({ ...s, lastSeen: s.lastSeen ? new Date(s.lastSeen).toISOString() : null })));
+});
+// Add students (one name per line). Their codes are returned this once.
+app.post('/api/rosters/:id/students', needTeacher, (req, res) => {
+  const r = myRoster(req, req.params.id);
+  if (!r) return res.status(404).json({ error: 'Class list not found.' });
+  const names = (Array.isArray(req.body?.names) ? req.body.names : []).map((n) => cleanName(n, 30)).filter(Boolean).slice(0, 60);
+  if (!names.length) return res.status(400).json({ error: 'Write at least one name.' });
+  const count = sql.prepare('SELECT COUNT(*) AS n FROM students WHERE roster_id = ?').get(r.id).n;
+  if (count + names.length > 60) return res.status(400).json({ error: 'A class list can have up to 60 students.' });
+  const out = tx(() => names.map((name) => {
+    const id = newId();
+    // placeholder hashes are replaced by issueCodes right away
+    sql.prepare('INSERT INTO students (id, roster_id, name, code_hash, parent_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, r.id, name, `x${newId()}`, `y${newId()}`, Date.now());
+    return { id, name, ...issueCodes(id, 'both') };
+  }));
+  res.status(201).json(out);
+});
+
+const myStudent = (req, id) => sql.prepare('SELECT s.* FROM students s JOIN rosters r ON r.id = s.roster_id WHERE s.id = ? AND r.teacher_id = ?').get(String(id), req.teacher.id);
+app.post('/api/students/:id/codes', needTeacher, (req, res) => {
+  const s = myStudent(req, req.params.id);
+  if (!s) return res.status(404).json({ error: 'Student not found.' });
+  const which = ['student', 'parent', 'both'].includes(req.body?.which) ? req.body.which : 'both';
+  res.json({ id: s.id, name: s.name, ...issueCodes(s.id, which) });
+});
+app.patch('/api/students/:id', needTeacher, (req, res) => {
+  const s = myStudent(req, req.params.id);
+  const name = cleanName(req.body?.name, 30);
+  if (!s) return res.status(404).json({ error: 'Student not found.' });
+  if (!name) return res.status(400).json({ error: 'Add a name.' });
+  sql.prepare('UPDATE students SET name = ? WHERE id = ?').run(name, s.id);
+  res.json({ ok: true });
+});
+app.delete('/api/students/:id', needTeacher, (req, res) => {
+  const s = myStudent(req, req.params.id);
+  if (!s) return res.status(404).json({ error: 'Student not found.' });
+  rmFiles(sql.prepare('SELECT f.id FROM hw_files f JOIN submissions sb ON sb.id = f.submission_id WHERE sb.student_id = ?').all(s.id));
+  sql.prepare('DELETE FROM students WHERE id = ?').run(s.id);
+  res.json({ ok: true });
+});
+
+// ---------- homework ----------
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const hwRow = (h) => ({ id: h.id, title: h.title, instructions: h.instructions, due: h.due, rosterId: h.roster_id, rosterName: h.roster_name, createdAt: new Date(h.created_at).toISOString() });
+const subRow = (s) => s && ({
+  id: s.id, text: s.text, submittedAt: s.submitted_at ? new Date(s.submitted_at).toISOString() : null,
+  mark: s.mark, feedback: s.feedback, markedAt: s.marked_at ? new Date(s.marked_at).toISOString() : null,
+});
+const hwFiles = (homeworkId, submissionId) => sql.prepare(
+  `SELECT * FROM hw_files WHERE homework_id = ? AND ${submissionId ? 'submission_id = ?' : 'submission_id IS NULL'} ORDER BY created_at`)
+  .all(...(submissionId ? [homeworkId, submissionId] : [homeworkId])).map(fileRow);
+
+// Who may see this homework, and as what: 'teacher' (who set it), 'student' or 'parent' (of its class list).
+function homeworkAccess(req, id) {
+  const h = sql.prepare('SELECT h.*, r.name AS roster_name FROM homework h JOIN rosters r ON r.id = h.roster_id WHERE h.id = ?').get(String(id));
+  if (!h) return null;
+  if (req.teacher && h.teacher_id === req.teacher.id) return { h, as: 'teacher' };
+  if (req.pupil && req.pupil.rosterId === h.roster_id) return { h, as: req.pupil.kind };
+  return null;
+}
+function homeworkFields(b) {
+  const title = cleanName(b?.title, 100);
+  const due = typeof b?.due === 'string' && DATE_RE.test(b.due) && !Number.isNaN(Date.parse(b.due)) ? b.due : null;
+  if (!title || !due) return { error: 'Add a title and a due date.' };
+  return { title, due, instructions: String(b.instructions || '').replace(/\r/g, '').slice(0, 4000) };
+}
+
+app.get('/api/homework', needSignedIn, (req, res) => {
+  if (req.teacher) {
+    return res.json(sql.prepare(`SELECT h.*, r.name AS roster_name,
+        (SELECT COUNT(*) FROM students s WHERE s.roster_id = h.roster_id) AS total,
+        (SELECT COUNT(*) FROM submissions s WHERE s.homework_id = h.id AND s.submitted_at IS NOT NULL) AS handed,
+        (SELECT COUNT(*) FROM submissions s WHERE s.homework_id = h.id AND s.marked_at IS NOT NULL) AS marked
+      FROM homework h JOIN rosters r ON r.id = h.roster_id WHERE h.teacher_id = ? ORDER BY h.due DESC, h.created_at DESC`)
+      .all(req.teacher.id).map((h) => ({ ...hwRow(h), total: h.total, handed: h.handed, marked: h.marked })));
+  }
+  res.json(sql.prepare(`SELECT h.*, r.name AS roster_name, s.id AS sid, s.submitted_at, s.marked_at, s.mark
+      FROM homework h JOIN rosters r ON r.id = h.roster_id
+      LEFT JOIN submissions s ON s.homework_id = h.id AND s.student_id = ?
+      WHERE h.roster_id = ? ORDER BY h.due DESC, h.created_at DESC`)
+    .all(req.pupil.id, req.pupil.rosterId)
+    .map((h) => ({ ...hwRow(h), submittedAt: h.submitted_at ? new Date(h.submitted_at).toISOString() : null, markedAt: h.marked_at ? new Date(h.marked_at).toISOString() : null, mark: h.marked_at ? h.mark : '' })));
+});
+
+app.post('/api/homework', needTeacher, (req, res) => {
+  const r = myRoster(req, req.body?.rosterId);
+  if (!r) return res.status(400).json({ error: 'Choose a class list.' });
+  const f = homeworkFields(req.body);
+  if (f.error) return res.status(400).json(f);
+  const id = newId();
+  sql.prepare('INSERT INTO homework (id, teacher_id, roster_id, title, instructions, due, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, req.teacher.id, r.id, f.title, f.instructions, f.due, Date.now());
+  res.status(201).json({ id });
+});
+app.patch('/api/homework/:id', needTeacher, (req, res) => {
+  const a = homeworkAccess(req, req.params.id);
+  if (!a || a.as !== 'teacher') return res.status(404).json({ error: 'Homework not found.' });
+  const f = homeworkFields(req.body);
+  if (f.error) return res.status(400).json(f);
+  sql.prepare('UPDATE homework SET title = ?, instructions = ?, due = ? WHERE id = ?').run(f.title, f.instructions, f.due, a.h.id);
+  res.json({ ok: true });
+});
+app.delete('/api/homework/:id', needTeacher, (req, res) => {
+  const a = homeworkAccess(req, req.params.id);
+  if (!a || a.as !== 'teacher') return res.status(404).json({ error: 'Homework not found.' });
+  rmFiles(sql.prepare('SELECT id FROM hw_files WHERE homework_id = ?').all(a.h.id));
+  sql.prepare('DELETE FROM homework WHERE id = ?').run(a.h.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/homework/:id', needSignedIn, (req, res) => {
+  const a = homeworkAccess(req, req.params.id);
+  if (!a) return res.status(404).json({ error: 'Homework not found.' });
+  const out = { ...hwRow(a.h), files: hwFiles(a.h.id), as: a.as };
+  if (a.as === 'teacher') {
+    out.students = sql.prepare(`SELECT st.id, st.name, s.id AS sid, s.submitted_at, s.marked_at, s.mark
+        FROM students st LEFT JOIN submissions s ON s.student_id = st.id AND s.homework_id = ?
+        WHERE st.roster_id = ? ORDER BY st.name COLLATE NOCASE`).all(a.h.id, a.h.roster_id)
+      .map((s) => ({ id: s.id, name: s.name, submissionId: s.sid, submittedAt: s.submitted_at ? new Date(s.submitted_at).toISOString() : null, markedAt: s.marked_at ? new Date(s.marked_at).toISOString() : null, mark: s.mark || '' }));
+  } else {
+    const s = sql.prepare('SELECT * FROM submissions WHERE homework_id = ? AND student_id = ?').get(a.h.id, req.pupil.id);
+    out.submission = s ? { ...subRow(s), files: hwFiles(a.h.id, s.id) } : null;
+    if (out.submission && !s.marked_at) { out.submission.mark = ''; out.submission.feedback = ''; }
+  }
+  res.json(out);
+});
+
+// the teacher opens one student's work
+app.get('/api/submissions/:id', needTeacher, (req, res) => {
+  const s = sql.prepare('SELECT * FROM submissions WHERE id = ?').get(String(req.params.id));
+  const a = s && homeworkAccess(req, s.homework_id);
+  if (!a || a.as !== 'teacher') return res.status(404).json({ error: 'Homework not found.' });
+  const st = sql.prepare('SELECT name FROM students WHERE id = ?').get(s.student_id);
+  res.json({ ...subRow(s), student: st?.name || '', files: hwFiles(s.homework_id, s.id) });
+});
+app.patch('/api/submissions/:id', needTeacher, (req, res) => {
+  const s = sql.prepare('SELECT * FROM submissions WHERE id = ?').get(String(req.params.id));
+  const a = s && homeworkAccess(req, s.homework_id);
+  if (!a || a.as !== 'teacher') return res.status(404).json({ error: 'Homework not found.' });
+  const mark = cleanName(req.body?.mark, 20), feedback = String(req.body?.feedback || '').replace(/\r/g, '').slice(0, 2000);
+  if (!mark && !feedback.trim()) return res.status(400).json({ error: 'Add a mark or a comment.' });
+  sql.prepare('UPDATE submissions SET mark = ?, feedback = ?, marked_at = ? WHERE id = ?').run(mark, feedback, Date.now(), s.id);
+  res.json({ ok: true });
+});
+
+// students: save work, and hand it in (or take it back) until it is marked
+function mySubmission(req, homeworkId) {
+  let s = sql.prepare('SELECT * FROM submissions WHERE homework_id = ? AND student_id = ?').get(homeworkId, req.pupil.id);
+  if (!s) {
+    sql.prepare('INSERT INTO submissions (id, homework_id, student_id) VALUES (?, ?, ?)').run(newId(), homeworkId, req.pupil.id);
+    s = sql.prepare('SELECT * FROM submissions WHERE homework_id = ? AND student_id = ?').get(homeworkId, req.pupil.id);
+  }
+  return s;
+}
+app.put('/api/homework/:id/submission', needSignedIn, (req, res) => {
+  const a = homeworkAccess(req, req.params.id);
+  if (!a || a.as !== 'student') return res.status(404).json({ error: 'Homework not found.' });
+  const s = mySubmission(req, a.h.id);
+  if (s.marked_at) return res.status(409).json({ error: 'Your teacher has already marked this homework.' });
+  const text = String(req.body?.text || '').replace(/\r/g, '').slice(0, 10000);
+  const handIn = req.body?.handIn === true ? Date.now() : req.body?.handIn === false ? null : s.submitted_at;
+  sql.prepare('UPDATE submissions SET text = ?, submitted_at = ? WHERE id = ?').run(text, handIn, s.id);
+  res.json({ ok: true, submittedAt: handIn ? new Date(handIn).toISOString() : null });
+});
+
+// files: the teacher attaches to the homework, a student attaches to their own work
+const MAX_HW_FILES = 10;
+app.post('/api/homework/:id/files', needSignedIn, (req, res, next) => {
+  const a = homeworkAccess(req, req.params.id);
+  if (!a || a.as === 'parent') return res.status(404).json({ error: 'Homework not found.' });
+  if (!uploadLimit(req.teacher ? req.teacher.id : req.pupil.id)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+  req.hw = a;
+  next();
+}, express.raw({ type: () => true, limit: MAX_FILE }), (req, res) => {
+  const a = req.hw;
+  let submissionId = null;
+  if (a.as === 'student') {
+    const s = mySubmission(req, a.h.id);
+    if (s.marked_at) return res.status(409).json({ error: 'Your teacher has already marked this homework.' });
+    submissionId = s.id;
+  }
+  const n = sql.prepare(`SELECT COUNT(*) AS n FROM hw_files WHERE homework_id = ? AND ${submissionId ? 'submission_id = ?' : 'submission_id IS NULL'}`)
+    .get(...(submissionId ? [a.h.id, submissionId] : [a.h.id])).n;
+  if (n >= MAX_HW_FILES) return res.status(400).json({ error: 'You can attach up to 10 files.' });
+  const up = readUpload(req);
+  if (up.error) return res.status(400).json(up);
+  const id = newId(), at = Date.now();
+  fs.writeFileSync(filePath(id), up.buf);
+  sql.prepare('INSERT INTO hw_files (id, homework_id, submission_id, name, ext, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, a.h.id, submissionId, up.name, up.ext, up.buf.length, at);
+  res.status(201).json(fileRow({ id, name: up.name, size: up.buf.length, created_at: at }));
+});
+// Homework files need the session token, so the app downloads them with fetch.
+function hwFileAccess(req, id) {
+  const f = /^[0-9a-f]{16}$/.test(String(id)) && sql.prepare('SELECT * FROM hw_files WHERE id = ?').get(String(id));
+  const a = f && homeworkAccess(req, f.homework_id);
+  if (!a) return null;
+  if (!f.submission_id || a.as === 'teacher') return { f, a };
+  const s = sql.prepare('SELECT student_id, marked_at FROM submissions WHERE id = ?').get(f.submission_id);
+  return s && req.pupil && s.student_id === req.pupil.id ? { f, a, s } : null;
+}
+app.get('/api/hwfiles/:id', needSignedIn, (req, res) => {
+  const x = hwFileAccess(req, req.params.id);
+  if (!x) return res.status(404).json({ error: 'File not found.' });
+  sendStoredFile(res, x.f);
+});
+app.delete('/api/hwfiles/:id', needSignedIn, (req, res) => {
+  const x = hwFileAccess(req, req.params.id);
+  const mine = x && ((x.a.as === 'teacher' && !x.f.submission_id) || (x.a.as === 'student' && x.s && !x.s.marked_at));
+  if (!mine) return res.status(404).json({ error: 'File not found.' });
+  rmFiles([x.f]);
+  sql.prepare('DELETE FROM hw_files WHERE id = ?').run(x.f.id);
+  res.json({ ok: true });
+});
+
+// parents (and students) see which classes the child joined
+app.get('/api/my/attendance', needSignedIn, (req, res) => {
+  if (!req.pupil) return res.json([]);
+  res.json(sql.prepare(`SELECT a.at, a.room, (SELECT c.title FROM courses c WHERE c.room = a.room LIMIT 1) AS title
+      FROM attendance a WHERE a.student_id = ? ORDER BY a.at DESC LIMIT 300`).all(req.pupil.id)
+    .map((a) => ({ at: new Date(a.at).toISOString(), title: a.title || '' })));
 });
 
 // Body too big: answer in JSON so the app can show a friendly message.
@@ -586,18 +1026,21 @@ io.on('connection', (socket) => {
     }
     const t = teacherFromToken(token);
     const teacher = !!t && t.id === info.teacherId;
+    const pupil = t ? null : pupilFromToken(token);
+    if (pupil && pupil.kind === 'parent') return reply({ error: 'Parents can follow classes from their own page, but cannot join them.' });
     const r = getRoom(room, info);
     if (r.locked && !teacher) { dropRoomIfEmpty(room); return reply({ error: 'The teacher has locked this class. Ask them to unlock it.' }); }
-    const myName = (teacher ? t.name : String(name || '').trim()).slice(0, 30) || 'Guest';
+    // students signed in with their code always appear with their class-list name
+    const myName = (teacher ? t.name : pupil ? pupil.name : String(name || '').trim()).slice(0, 30) || 'Guest';
 
     // Put this person in the class. Returns the welcome message, or an error if the class is full.
     const enter = () => {
       if (r.peers.size >= 16) return { error: 'This class is full (16 people max).' };
-      me = { name: myName, role: teacher ? 'teacher' : 'student', hand: false, mic: true, cam: true };
+      me = { name: myName, role: teacher ? 'teacher' : 'student', verified: teacher || !!pupil, hand: false, mic: true, cam: true };
       socket.join(room);
       const others = peerList(r);
       r.peers.set(socket.id, me);
-      q.addAttendance.run(room, me.name, me.role, Date.now());
+      q.addAttendance.run(room, me.name, me.role, Date.now(), pupil ? pupil.id : null);
       socket.to(room).emit('peer-joined', { id: socket.id, ...me });
       return {
         ok: true, id: socket.id, role: me.role, name: me.name, peers: others, strokes: r.strokes.map((x) => x.s),
