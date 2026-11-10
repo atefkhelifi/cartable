@@ -76,6 +76,16 @@ sql.exec(`
     at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS attendance_room ON attendance(room);
+  CREATE TABLE IF NOT EXISTS class_files (
+    id TEXT PRIMARY KEY,
+    room TEXT NOT NULL,
+    teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    ext TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS class_files_room ON class_files(room);
 `);
 // columns added after 1.1
 if (!sql.prepare('PRAGMA table_info(courses)').all().some((c) => c.name === 'waiting_room')) {
@@ -136,12 +146,27 @@ if (fs.existsSync(OLD_DB)) {
   }
 }
 
-// Remove expired sessions, old instant rooms and old attendance records.
+// Shared class files live on disk in DATA_DIR/files, named by their random id.
+const FILES_DIR = path.join(DATA_DIR, 'files');
+fs.mkdirSync(FILES_DIR, { recursive: true });
+const filePath = (id) => path.join(FILES_DIR, id);
+function deleteFiles(rows) {
+  for (const f of rows) {
+    fs.rm(filePath(f.id), { force: true }, () => {});
+    sql.prepare('DELETE FROM class_files WHERE id = ?').run(f.id);
+  }
+}
+// Files whose class no longer exists (every week deleted, or an old "start now" room).
+const dropOrphanFiles = () => deleteFiles(sql.prepare(
+  'SELECT id FROM class_files WHERE room NOT IN (SELECT room FROM courses) AND room NOT IN (SELECT room FROM instant_rooms)').all());
+
+// Remove expired sessions, old instant rooms, old attendance records and orphaned files.
 function prune() {
   const now = Date.now();
   sql.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   sql.prepare('DELETE FROM instant_rooms WHERE expires_at < ?').run(now - ATTENDANCE_DAYS * DAY);
   sql.prepare('DELETE FROM attendance WHERE at < ?').run(now - ATTENDANCE_DAYS * DAY);
+  dropOrphanFiles();
 }
 prune();
 setInterval(prune, 6 * 3600e3).unref();
@@ -323,6 +348,7 @@ app.delete('/api/courses/:id', needTeacher, (req, res) => {
   if (!c || c.teacher_id !== req.teacher.id) return res.status(404).json({ error: 'Class not found.' });
   if (req.query.series === '1') q.delSeries.run(c.series, req.teacher.id);
   else q.delCourse.run(c.id, req.teacher.id);
+  dropOrphanFiles();
   res.json({ ok: true });
 });
 
@@ -376,6 +402,84 @@ app.get('/api/rooms/:room/background', (req, res) => {
   res.set({ 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=3600' }).send(r.bg.buf);
 });
 
+// ---------- shared class files ----------
+// Anyone with the class code can list and download; only the class teacher uploads and deletes.
+const FILE_TYPES = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  txt: 'text/plain; charset=utf-8', doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', odt: 'application/vnd.oasis.opendocument.text',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odp: 'application/vnd.oasis.opendocument.presentation', xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', mp4: 'video/mp4',
+};
+const MAX_FILE = 10 * 1024 * 1024, MAX_ROOM_FILES = 100 * 1024 * 1024;
+const uploadLimit = limiter(60, 15 * 60e3);
+const fileRow = (f) => ({ id: f.id, name: f.name, size: f.size, at: new Date(f.created_at).toISOString() });
+
+app.get('/api/rooms/:room/files', (req, res) => {
+  const room = req.params.room;
+  if (!ROOM_RE.test(room) || !roomInfo(room)) {
+    if (!roomLimit(req.ip)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+    return res.status(404).json({ error: 'There is no class with this code. Check the code with your teacher.' });
+  }
+  res.json(sql.prepare('SELECT * FROM class_files WHERE room = ? ORDER BY created_at DESC').all(room).map(fileRow));
+});
+
+app.post('/api/rooms/:room/files', needTeacher, (req, res, next) => {
+  if (!uploadLimit(req.teacher.id)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+  const info = ROOM_RE.test(req.params.room) && roomInfo(req.params.room);
+  if (!info || info.teacherId !== req.teacher.id) return res.status(403).json({ error: 'Only the class teacher can share files.' });
+  next();
+}, express.raw({ type: () => true, limit: MAX_FILE }), (req, res) => {
+  const room = req.params.room;
+  let name = '';
+  try { name = decodeURIComponent(String(req.get('x-file-name') || '')); } catch {}
+  name = name.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(-120);
+  const ext = (name.match(/\.([a-z0-9]{1,5})$/i) || [])[1]?.toLowerCase();
+  if (!name || !ext || !FILE_TYPES[ext]) return res.status(400).json({ error: 'This kind of file cannot be shared. Use a PDF, a picture, an office document, a sound or a video.' });
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'That file is empty.' });
+  const used = sql.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM class_files WHERE room = ?').get(room).n;
+  if (used + buf.length > MAX_ROOM_FILES) return res.status(413).json({ error: 'This class has no space left for files. Delete some old ones first.' });
+  const id = newId();
+  fs.writeFileSync(filePath(id), buf);
+  const row = { id, name, size: buf.length, created_at: Date.now() };
+  sql.prepare('INSERT INTO class_files (id, room, teacher_id, name, ext, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, room, req.teacher.id, name, ext, buf.length, row.created_at);
+  io.to(room).emit('files-changed', { name });
+  res.status(201).json(fileRow(row));
+});
+
+app.get('/api/files/:id', (req, res) => {
+  const f = /^[0-9a-f]{16}$/.test(req.params.id) && sql.prepare('SELECT * FROM class_files WHERE id = ?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'File not found.' });
+  res.set({
+    'content-type': FILE_TYPES[f.ext] || 'application/octet-stream',
+    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'; sandbox",
+    'cache-control': 'private, max-age=86400',
+  });
+  res.sendFile(filePath(f.id), (err) => { if (err && !res.headersSent) res.status(404).json({ error: 'File not found.' }); });
+});
+
+app.delete('/api/files/:id', needTeacher, (req, res) => {
+  const f = /^[0-9a-f]{16}$/.test(req.params.id) && sql.prepare('SELECT * FROM class_files WHERE id = ?').get(req.params.id);
+  if (!f || f.teacher_id !== req.teacher.id) return res.status(404).json({ error: 'File not found.' });
+  deleteFiles([f]);
+  io.to(f.room).emit('files-changed', {});
+  res.json({ ok: true });
+});
+
+// Body too big: answer in JSON so the app can show a friendly message.
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ error: req.path.endsWith('/background') ? 'That picture is too big. Try a smaller one.' : 'That file is too big (10 MB max).' });
+  }
+  next(err);
+});
+
 // ---------- live rooms (WebRTC signaling) ----------
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 2e5 });
@@ -385,13 +489,38 @@ const io = new Server(server, { maxHttpBufferSize: 2e5 });
 const rooms = new Map();
 function getRoom(id, info) {
   if (!rooms.has(id)) {
-    rooms.set(id, { peers: new Map(), lobby: new Map(), locked: false, boardLocked: false, waiting: !!info?.waiting, strokes: [], points: 0, bg: null, recording: null });
+    rooms.set(id, { peers: new Map(), lobby: new Map(), locked: false, boardLocked: false, waiting: !!info?.waiting, strokes: [], points: 0, bg: null, recording: null, poll: null, groups: null });
   }
   return rooms.get(id);
 }
 const peerList = (r) => [...r.peers].map(([id, p]) => ({ id, ...p }));
 const lobbyList = (r) => [...r.lobby].map(([id, p]) => ({ id, name: p.name }));
 const flags = (r) => ({ locked: r.locked, boardLocked: r.boardLocked, waiting: r.waiting });
+
+// ---- polls: one at a time per class; only the teacher sees results until they are shown ----
+function pollView(r, forTeacher) {
+  const p = r.poll;
+  if (!p) return null;
+  const counts = p.options.map(() => 0);
+  for (const v of p.votes.values()) counts[v.choice]++;
+  const show = forTeacher || p.shown;
+  return {
+    id: p.id, q: p.q, options: p.options, quiz: p.correct !== null, open: p.open, shown: p.shown, total: p.votes.size,
+    counts: show ? counts : null, correct: show ? p.correct : null,
+    ...(forTeacher ? { voters: [...p.votes.values()].map((v) => ({ name: v.name, choice: v.choice })) } : {}),
+  };
+}
+function sendPoll(r, roomId, teachersOnly) {
+  for (const [id, p] of r.peers) {
+    if (p.role === 'teacher') io.to(id).emit('poll', pollView(r, true));
+    else if (!teachersOnly) io.to(id).emit('poll', pollView(r, false));
+  }
+}
+
+// ---- breakout groups: r.groups maps socket id -> group number; everyone else is in the main room (null) ----
+const groupOf = (r, id) => (r.groups ? (r.groups.has(id) ? r.groups.get(id) : null) : null);
+const breakoutView = (r) => (r.groups ? { active: true, count: r.groupCount, groups: Object.fromEntries(r.groups) } : { active: false });
+const sendBreakout = (r, roomId) => io.to(roomId).emit('breakout', breakoutView(r));
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 function sendLobby(r) {
   const list = lobbyList(r);
@@ -473,6 +602,7 @@ io.on('connection', (socket) => {
       return {
         ok: true, id: socket.id, role: me.role, name: me.name, peers: others, strokes: r.strokes.map((x) => x.s),
         ...flags(r), recording: !!r.recording, bg: r.bg ? r.bg.v : 0, lobby: teacher ? lobbyList(r) : [],
+        poll: pollView(r, teacher), breakout: breakoutView(r),
       };
     };
 
@@ -506,7 +636,18 @@ io.on('connection', (socket) => {
   on('chat', (text) => {
     if (!roomId || !me || typeof text !== 'string' || !chatLimit(1)) return;
     const t = text.trim().slice(0, 500);
-    if (t) io.to(roomId).emit('chat', { from: socket.id, name: me.name, role: me.role, text: t, at: Date.now() });
+    if (!t) return;
+    const r = getRoom(roomId);
+    const msg = { from: socket.id, name: me.name, role: me.role, text: t, at: Date.now() };
+    if (!r.groups) return io.to(roomId).emit('chat', msg);
+    // During group work, messages stay in the group. Teachers read every group, and a
+    // teacher writing from the main room speaks to everyone.
+    const g = groupOf(r, socket.id);
+    msg.group = g;
+    msg.toAll = me.role === 'teacher' && g === null;
+    for (const [id, p] of r.peers) {
+      if (msg.toAll || p.role === 'teacher' || groupOf(r, id) === g) io.to(id).emit('chat', msg);
+    }
   });
 
   on('state', (patch) => {
@@ -544,6 +685,18 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('board-remove', id);
   });
 
+  // answer the poll (students); the answer can change while voting is open
+  on('vote', (msg, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => {};
+    if (!roomId || !me || me.role === 'teacher' || !isObj(msg) || !reactLimit(1)) return reply({ ok: false });
+    const r = getRoom(roomId);
+    const p = r.poll;
+    if (!p || !p.open || msg.id !== p.id || !Number.isInteger(msg.choice) || msg.choice < 0 || msg.choice >= p.options.length) return reply({ ok: false });
+    p.votes.set(socket.id, { name: me.name, choice: msg.choice });
+    sendPoll(r, roomId, true);
+    reply({ ok: true });
+  });
+
   // teacher-only controls
   on('teacher', (msg) => {
     if (!roomId || !me || me.role !== 'teacher' || !isObj(msg)) return;
@@ -578,6 +731,41 @@ io.on('connection', (socket) => {
       case 'end': io.to(roomId).emit('ended'); [...r.lobby.keys()].forEach((id) => io.to(id).emit('ended')); break;
       case 'record-start': r.recording = socket.id; io.to(roomId).emit('recording', { on: true, name: me.name }); break;
       case 'record-stop': if (r.recording) { r.recording = null; io.to(roomId).emit('recording', { on: false }); } break;
+
+      case 'poll-start': {
+        const q = typeof msg.q === 'string' ? msg.q.trim().slice(0, 200) : '';
+        const options = Array.isArray(msg.options) ? msg.options.filter((o) => typeof o === 'string').map((o) => o.trim().slice(0, 80)).filter(Boolean) : [];
+        if (!q || options.length < 2 || options.length > 6) return;
+        const correct = Number.isInteger(msg.correct) && msg.correct >= 0 && msg.correct < options.length ? msg.correct : null;
+        r.poll = { id: newId(), q, options, correct, votes: new Map(), open: true, shown: false };
+        sendPoll(r, roomId);
+        break;
+      }
+      case 'poll-close': if (r.poll) { r.poll.open = false; sendPoll(r, roomId); } break;
+      case 'poll-show': if (r.poll) { r.poll.open = false; r.poll.shown = true; sendPoll(r, roomId); } break;
+      case 'poll-end': r.poll = null; io.to(roomId).emit('poll', null); break;
+
+      case 'breakout-start': {
+        const count = Number(msg.count);
+        if (!Number.isInteger(count) || count < 2 || count > 8 || !isObj(msg.assign)) return;
+        r.groups = new Map();
+        r.groupCount = count;
+        for (const [id, g] of Object.entries(msg.assign)) {
+          if (r.peers.has(id) && Number.isInteger(g) && g >= 0 && g < count) r.groups.set(id, g);
+        }
+        sendBreakout(r, roomId);
+        break;
+      }
+      case 'breakout-move': {
+        const g = msg.group;
+        if (!r.groups || typeof target !== 'string' || !r.peers.has(target)) return;
+        if (g === null) r.groups.delete(target);
+        else if (Number.isInteger(g) && g >= 0 && g < r.groupCount) r.groups.set(target, g);
+        else return;
+        sendBreakout(r, roomId);
+        break;
+      }
+      case 'breakout-end': if (r.groups) { r.groups = null; sendBreakout(r, roomId); } break;
     }
   });
 
@@ -588,6 +776,7 @@ io.on('connection', (socket) => {
     if (r.lobby.delete(socket.id)) sendLobby(r);
     if (r.peers.delete(socket.id)) {
       if (r.recording === socket.id) { r.recording = null; socket.to(roomId).emit('recording', { on: false }); }
+      if (r.groups && r.groups.delete(socket.id)) sendBreakout(r, roomId);
       socket.to(roomId).emit('peer-left', { id: socket.id });
     }
     dropRoomIfEmpty(roomId);

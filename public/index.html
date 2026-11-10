@@ -148,6 +148,8 @@
         </div>
       </div>
       <div class="room-head-actions">
+        <span class="pill pill-group" id="group-pill" hidden></span>
+        <button class="btn btn-ghost btn-sm" id="btn-files" type="button">Files</button>
         <button class="btn btn-ghost btn-sm" id="btn-copy-link" type="button">Copy invite link</button>
         <span class="pill pill-rec" id="rec-pill" hidden><i class="rec-dot" aria-hidden="true"></i><span>Recording</span></span>
         <span class="pill" id="room-lock-pill" hidden>Locked</span>
@@ -167,6 +169,7 @@
           <button role="tab" class="tab" data-tab="chat" aria-selected="true">Chat <span class="badge" id="chat-badge" hidden></span></button>
           <button role="tab" class="tab" data-tab="people" aria-selected="false">People <span class="count" id="people-count">1</span> <span class="badge" id="lobby-badge" hidden></span></button>
           <button role="tab" class="tab" data-tab="board" aria-selected="false">Whiteboard</button>
+          <button role="tab" class="tab" data-tab="poll" aria-selected="false">Poll <span class="badge" id="poll-badge" hidden>!</span></button>
         </div>
 
         <div class="tab-panel" id="tab-chat">
@@ -184,11 +187,37 @@
             <button class="btn btn-ghost btn-sm" data-t="waiting" id="t-waiting" type="button">Turn on waiting room</button>
             <button class="btn btn-ghost btn-sm" data-t="attendance" type="button">Attendance</button>
           </div>
+          <section class="breakout teacher-only" id="breakout">
+            <div class="breakout-row" id="bo-setup">
+              <label class="small" for="bo-count">Groups</label>
+              <select id="bo-count"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
+              <button class="btn btn-ghost btn-sm" id="bo-start" type="button">Split into groups</button>
+            </div>
+            <div class="breakout-row" id="bo-live" hidden>
+              <label class="small" for="bo-visit">I am in</label>
+              <select id="bo-visit"></select>
+              <button class="btn btn-ghost btn-sm" id="bo-end" type="button">Everyone back together</button>
+            </div>
+          </section>
           <section class="lobby teacher-only" id="lobby" hidden>
             <div class="lobby-head"><b>Waiting to join</b><button class="btn btn-primary btn-sm" data-t="admit-all" type="button">Let everyone in</button></div>
             <ul class="people" id="lobby-list"></ul>
           </section>
           <ul class="people" id="people-list"></ul>
+        </div>
+
+        <div class="tab-panel poll-panel" id="tab-poll" hidden>
+          <form class="stack teacher-only" id="poll-form">
+            <label class="field"><span>Question</span><input name="q" maxlength="200" required placeholder="e.g. Which fraction is bigger?"></label>
+            <fieldset class="field poll-opts">
+              <legend>Answers</legend>
+              <ol id="poll-opts"></ol>
+              <button class="btn btn-ghost btn-sm" id="poll-add" type="button">Add an answer</button>
+            </fieldset>
+            <label class="check"><input type="checkbox" id="poll-quiz"> Quiz: I will mark the right answer</label>
+            <button class="btn btn-primary" type="submit">Start the poll</button>
+          </form>
+          <div id="poll-live"></div>
         </div>
 
         <div class="tab-panel board-panel" id="tab-board" hidden>
@@ -360,6 +389,17 @@
         <button class="btn btn-primary" type="submit">Join</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- ========== CLASS FILES ========== -->
+  <dialog id="dlg-files" class="dialog dialog-sm">
+    <div class="stack">
+      <h2 id="files-title">Class files</h2>
+      <label class="btn btn-primary teacher-only" id="files-pick">Share a file…<input type="file" id="files-input" multiple hidden></label>
+      <p class="muted small teacher-only">PDF, pictures, office documents, sounds or videos, up to 10 MB each.</p>
+      <ul class="file-list" id="file-list"></ul>
+      <div class="row end"><button class="btn btn-ghost" type="button" data-close>Close</button></div>
+    </div>
   </dialog>
 
   <!-- ========== ATTENDANCE ========== -->
