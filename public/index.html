@@ -27,7 +27,17 @@
           <legend>I am a…</legend>
           <label class="role-opt"><input type="radio" name="role" value="student" checked><span><b>Student</b><small>I join classes</small></span></label>
           <label class="role-opt"><input type="radio" name="role" value="teacher"><span><b>Teacher</b><small>I plan and lead classes</small></span></label>
+          <label class="role-opt"><input type="radio" name="role" value="parent"><span><b>Parent</b><small>I follow my child</small></span></label>
         </fieldset>
+        <div class="seg" id="student-mode" role="group" aria-label="How do you sign in?">
+          <button type="button" data-smode="code" aria-pressed="true">I have a code</button>
+          <button type="button" data-smode="name" aria-pressed="false">Just my name</button>
+        </div>
+        <label class="field" id="code-field">
+          <span id="code-label">My code</span>
+          <input id="p-pupil-code" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="abcd-2345" inputmode="text">
+          <small class="muted" id="code-hint">Your teacher gave you this code.</small>
+        </label>
         <div class="seg" id="auth-mode" role="group" aria-label="Teacher account" hidden>
           <button type="button" data-auth="login" aria-pressed="true">Sign in</button>
           <button type="button" data-auth="signup" aria-pressed="false">Create an account</button>
@@ -67,6 +77,18 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
         <span>Today</span>
       </a>
+      <a class="rail-link" href="#/homework" data-nav="homework" id="nav-homework" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M9 11h6M9 15h6M9 7h4"/></svg>
+        <span>Homework</span>
+      </a>
+      <a class="rail-link" href="#/classes" data-nav="classes" id="nav-classes" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></svg>
+        <span>Class lists</span>
+      </a>
+      <a class="rail-link" href="#/attendance" data-nav="attendance" id="nav-attendance" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
+        <span>Attendance</span>
+      </a>
       <a class="rail-link" href="#/calendar" data-nav="calendar">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
         <span>Calendar</span>
@@ -93,7 +115,7 @@
             <p class="muted" id="today-date"></p>
           </div>
           <div class="head-actions">
-            <button class="btn btn-ghost" id="btn-join-code" type="button">Join with a code</button>
+            <button class="btn btn-ghost not-parent" id="btn-join-code" type="button">Join with a code</button>
             <button class="btn btn-primary teacher-only" id="btn-instant" type="button">Start a class now</button>
           </div>
         </header>
@@ -133,6 +155,41 @@
           <div class="cal-grid" id="cal-grid" role="grid"></div>
           <aside class="panel day-panel" id="day-panel"></aside>
         </div>
+      </section>
+
+      <!-- HOMEWORK -->
+      <section id="view-homework" class="view" hidden>
+        <header class="page-head">
+          <div><h1>Homework</h1><p class="muted" id="hw-sub"></p></div>
+          <div class="head-actions"><button class="btn btn-primary teacher-only" id="btn-new-hw" type="button">Give homework</button></div>
+        </header>
+        <div class="split">
+          <ul class="hw-list panel" id="hw-list"></ul>
+          <section class="panel hw-detail" id="hw-detail"></section>
+        </div>
+      </section>
+
+      <!-- CLASS LISTS (teacher) -->
+      <section id="view-classes" class="view" hidden>
+        <header class="page-head">
+          <div><h1>Class lists</h1><p class="muted">Give each student a code to sign in, and each parent a code to follow their child.</p></div>
+        </header>
+        <div class="split">
+          <div class="panel stack">
+            <ul class="roster-list" id="roster-list"></ul>
+            <form class="row" id="roster-form">
+              <label class="field"><span>New class list</span><input name="name" maxlength="60" required placeholder="e.g. Year 3 Blue"></label>
+              <button class="btn btn-ghost" type="submit">Add</button>
+            </form>
+          </div>
+          <section class="panel" id="roster-detail"></section>
+        </div>
+      </section>
+
+      <!-- ATTENDANCE (parent) -->
+      <section id="view-attendance" class="view" hidden>
+        <header class="page-head"><div><h1>Attendance</h1><p class="muted" id="att-sub"></p></div></header>
+        <section class="panel"><ul class="att-list" id="my-att-list"></ul></section>
       </section>
     </main>
   </div>
@@ -349,6 +406,10 @@
         <label class="field"><span>Class / group</span><input name="group" maxlength="40" placeholder="e.g. Year 3 — Blue group"></label>
       </div>
       <div class="row">
+        <label class="field"><span>Class list</span><select name="rosterId" id="course-roster"><option value="">None: share the link</option></select>
+          <small class="muted">Students on the list see this class on their timetable.</small></label>
+      </div>
+      <div class="row">
         <label class="field"><span>Date</span><input type="date" name="date" required></label>
         <label class="field"><span>Starts</span><input type="time" name="start" required value="09:00"></label>
         <label class="field"><span>Ends</span><input type="time" name="end" required value="09:45"></label>
@@ -391,6 +452,37 @@
     </form>
   </dialog>
 
+  <!-- ========== HOMEWORK FORM ========== -->
+  <dialog id="dlg-hw" class="dialog">
+    <form id="hw-form" class="stack">
+      <h2 id="hw-dlg-title">Give homework</h2>
+      <label class="field"><span>Class list</span><select name="rosterId" id="hw-roster" required></select></label>
+      <label class="field"><span>Title</span><input name="title" maxlength="100" required placeholder="e.g. Fractions worksheet"></label>
+      <label class="field"><span>Instructions</span><textarea name="instructions" rows="5" maxlength="4000" placeholder="e.g. Do page 12, then draw your favourite fraction."></textarea></label>
+      <label class="field"><span>Due date</span><input type="date" name="due" required></label>
+      <label class="field" id="hw-attach-field"><span>Attach files (optional)</span><input type="file" id="hw-attach" multiple></label>
+      <p class="form-error" id="hw-error" role="alert"></p>
+      <div class="row end">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit" id="hw-submit">Give homework</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ========== NEW CODES (shown once) ========== -->
+  <dialog id="dlg-codes" class="dialog">
+    <div class="stack">
+      <h2>Sign-in codes</h2>
+      <p class="muted">These codes are shown only now. Print the cards or write them down. You can make new codes later if one is lost.</p>
+      <div class="code-cards" id="code-cards"></div>
+      <div class="row end">
+        <button class="btn btn-ghost" type="button" data-close>Close</button>
+        <button class="btn btn-primary" type="button" id="codes-print">Print cards</button>
+      </div>
+    </div>
+  </dialog>
+  <div id="print-cards" class="print-only" aria-hidden="true"></div>
+
   <!-- ========== CLASS FILES ========== -->
   <dialog id="dlg-files" class="dialog dialog-sm">
     <div class="stack">
@@ -417,5 +509,6 @@
   <script src="/js/i18n.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/room.js"></script>
+  <script src="/js/school.js"></script>
 </body>
 </html>
