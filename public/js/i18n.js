@@ -214,7 +214,7 @@
     'Only teachers can see attendance.': 'Seuls les enseignants peuvent voir les présences.',
     'This class link is not valid.': "Ce lien de cours n'est pas valide.",
     'The teacher has locked this class. Ask them to unlock it.': "L'enseignant a verrouillé ce cours. Demandez-lui de le déverrouiller.",
-    'This class is full (16 people max).': 'Ce cours est complet (16 personnes maximum).',
+    'This class is full ({n} people max).': 'Ce cours est complet ({n} personnes maximum).',
 
     // teacher accounts
     'Teacher account': 'Compte enseignant',
@@ -487,6 +487,10 @@
     'Live classes {name} joined while signed in with their code.': 'Les cours en direct que {name} a rejoints avec son code.',
     'No classes joined yet.': 'Aucun cours rejoint pour le moment.',
 
+    // video through LiveKit
+    'Could not connect the video. Check your connection, then leave and join again.': "Impossible de connecter la vidéo. Vérifiez votre connexion, puis quittez et rejoignez de nouveau.",
+    'The video connection was lost. Leave and join again if you cannot see or hear the class.': "La connexion vidéo a été perdue. Quittez et rejoignez de nouveau si vous ne voyez ou n'entendez plus le cours.",
+
     // reminders
     'Reminders': 'Rappels',
     'Get a notification 5 minutes before each class while Cartable is open': 'Recevoir une notification 5 minutes avant chaque cours quand Cartable est ouvert',
@@ -683,7 +687,7 @@
     "Only teachers can see attendance.": "المعلّمون فقط يمكنهم رؤية الحضور.",
     "This class link is not valid.": "رابط الحصة هذا غير صالح.",
     "The teacher has locked this class. Ask them to unlock it.": "أقفل المعلّم هذه الحصة. اطلب منه فتحها.",
-    "This class is full (16 people max).": "هذه الحصة ممتلئة (16 شخصًا كحد أقصى).",
+    "This class is full ({n} people max).": "هذه الحصة ممتلئة ({n} شخصًا كحد أقصى).",
 
     // teacher accounts
     "Teacher account": "حساب المعلّم",
@@ -955,6 +959,10 @@
     "You can attach up to 10 files.": "يمكنك إرفاق 10 ملفات كحد أقصى.",
     "Live classes {name} joined while signed in with their code.": "الحصص المباشرة التي حضرها {name} بعد الدخول برمزه.",
     "No classes joined yet.": "لم يحضر أي حصة بعد.",
+
+    // video through LiveKit
+    "Could not connect the video. Check your connection, then leave and join again.": "تعذّر توصيل الفيديو. تحقّق من اتصالك، ثم غادر وانضم من جديد.",
+    "The video connection was lost. Leave and join again if you cannot see or hear the class.": "انقطع اتصال الفيديو. غادر وانضم من جديد إذا لم تعد ترى الحصة أو تسمعها.",
 
     // reminders
     "Reminders": "التذكيرات",

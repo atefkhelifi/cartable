@@ -94,13 +94,39 @@ own [coturn](https://github.com/coturn/coturn) server).
 | Part | Technology |
 | --- | --- |
 | Server | Node.js, Express, Socket.IO (signaling, chat, whiteboard sync) |
-| Video | WebRTC mesh: each person connects directly to everyone else |
+| Video | WebRTC mesh: each person connects directly to everyone else (or LiveKit, optional) |
 | Frontend | Plain HTML, CSS and JavaScript, no build step |
 | Storage | SQLite file `data/cartable.db` (teachers, class lists, classes, homework, attendance) and files in `data/files/` |
 
-A mesh works well for a class of about 10–16 people. For bigger classes, swap
-the mesh for an open-source SFU such as [LiveKit](https://livekit.io) or
-[mediasoup](https://mediasoup.org).
+A mesh works well for a class of about 10–16 people.
+
+### Bigger classes with LiveKit (optional)
+
+For bigger classes, video can go through a [LiveKit](https://livekit.io) server
+instead: each browser sends its camera once, and LiveKit passes it on. Set:
+
+| Variable | Example |
+| --- | --- |
+| `LIVEKIT_URL` | `wss://my-school.livekit.cloud` |
+| `LIVEKIT_API_KEY` | from your LiveKit project |
+| `LIVEKIT_API_SECRET` | from your LiveKit project |
+| `MAX_CLASS_SIZE` | optional, default `50` (max 200) |
+
+Use [LiveKit Cloud](https://cloud.livekit.io) (it has a free tier) or run your
+own server. Without these variables Cartable keeps the peer-to-peer mesh and the
+16-person limit. With LiveKit, each breakout group is its own LiveKit room, and
+Cartable only gives people a token for the room of their group. Removing someone
+or ending the class also removes them from LiveKit.
+
+## Tests
+
+```bash
+npm test
+```
+
+Each test file starts its own Cartable server on a free port with an empty data
+folder, and talks to it over HTTP and Socket.IO. GitHub Actions runs the tests on
+Node 22 and 24 for every push to `main` and every pull request.
 
 ## Good to know
 
