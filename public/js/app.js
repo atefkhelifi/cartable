@@ -295,6 +295,7 @@
           <div class="acts">
             ${C.status(c) !== 'done' ? joinButton(c) : ''}
             <button class="btn btn-ghost btn-sm" data-copy="${esc(c.room)}" type="button">${t('Copy link')}</button>
+            <button class="btn btn-ghost btn-sm" data-files="${esc(c.room)}" type="button">${t('Files')}</button>
             ${isTeacher() ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(c.id)}" type="button">${t('Edit')}</button>
             <button class="btn btn-ghost btn-sm" data-del="${esc(c.id)}" type="button">${t('Delete')}</button>` : ''}
           </div>
@@ -317,6 +318,11 @@
     const copy = e.target.closest('[data-copy]');
     if (copy) { await navigator.clipboard?.writeText(C.inviteLink(copy.dataset.copy)).catch(() => {}); C.toast('Invite link copied'); }
     if (e.target.id === 'day-plan') openCourseDialog(selected);
+    const files = e.target.closest('[data-files]');
+    if (files) {
+      const c = C.courses.find((x) => x.room === files.dataset.files);
+      C.openFiles(files.dataset.files, c?.title, isTeacher());
+    }
     const edit = e.target.closest('[data-edit]');
     if (edit) openCourseDialog(null, C.courses.find((x) => x.id === edit.dataset.edit));
     const del = e.target.closest('[data-del]');
@@ -413,6 +419,66 @@
     a.download = 'cartable-classes.ics';
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  // ---------- class files (shared by the calendar and the live class) ----------
+  const dlgFiles = $('#dlg-files');
+  let filesRoom = null, filesManage = false;
+  const fmtSize = (n) => (n < 1024 * 1024 ? t('{n} KB', { n: Math.max(1, Math.round(n / 1024)) }) : t('{n} MB', { n: (n / 1048576).toFixed(1) }));
+  async function renderFiles() {
+    const room = filesRoom;
+    let list;
+    try { list = await C.api(`/api/rooms/${encodeURIComponent(room)}/files`); }
+    catch (err) { $('#file-list').innerHTML = `<li class="empty">${esc(err.message)}</li>`; return; }
+    if (room !== filesRoom) return;
+    $('#file-list').innerHTML = list.length ? list.map((f) => {
+      const ext = (f.name.match(/\.([a-z0-9]+)$/i) || [])[1] || '';
+      return `<li>
+        <span class="ic" aria-hidden="true">${esc(ext.slice(0, 4))}</span>
+        <span class="nm"><a href="/api/files/${esc(f.id)}" download>${esc(f.name)}</a>
+          <small>${esc(fmtSize(f.size))}, ${esc(new Date(f.at).toLocaleDateString(loc(), { day: 'numeric', month: 'short' }))}</small></span>
+        ${filesManage ? `<button class="del" type="button" data-del-file="${esc(f.id)}">${t('Delete')}</button>` : ''}
+      </li>`;
+    }).join('') : `<li class="empty">${t(filesManage ? 'No files yet. Share worksheets, pictures or slides with the class.' : 'Your teacher has not shared any files yet.')}</li>`;
+  }
+  C.openFiles = (room, title, canManage) => {
+    filesRoom = room;
+    filesManage = !!canManage;
+    $('#files-title').textContent = title ? t('Files for {title}', { title }) : t('Class files');
+    $('#files-pick').hidden = !filesManage;
+    $('#files-pick').nextElementSibling.hidden = !filesManage;
+    $('#file-list').innerHTML = '';
+    if (!dlgFiles.open) dlgFiles.showModal();
+    renderFiles();
+  };
+  C.refreshFiles = (room) => { if (dlgFiles.open && room === filesRoom) renderFiles(); };
+  dlgFiles.addEventListener('close', () => { filesRoom = null; });
+  $('#files-input').addEventListener('change', async (e) => {
+    const picked = [...e.target.files];
+    e.target.value = '';
+    for (const f of picked) {
+      if (f.size > 10 * 1024 * 1024) { C.toast(t('{name} is too big (10 MB max).', { name: f.name })); continue; }
+      C.toast(t('Sharing {name}…', { name: f.name }));
+      try {
+        const res = await fetch(`/api/rooms/${encodeURIComponent(filesRoom)}/files`, {
+          method: 'POST',
+          headers: { 'content-type': f.type || 'application/octet-stream', 'x-file-name': encodeURIComponent(f.name), authorization: `Bearer ${C.profile.token}` },
+          body: f,
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(t(d.error || 'Something went wrong. Try again.'));
+        C.toast(t('{name} is shared with the class.', { name: f.name }));
+      } catch (err) { C.toast(err.message); }
+    }
+    renderFiles();
+  });
+  $('#file-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-del-file]');
+    if (!b) return;
+    const name = b.closest('li').querySelector('a').textContent;
+    if (!confirm(t('Delete {name} for everyone?', { name }))) return;
+    try { await C.api(`/api/files/${b.dataset.delFile}`, { method: 'DELETE' }); renderFiles(); }
+    catch (err) { C.toast(err.message); }
   });
 
   // ---------- class reminders (browser notifications while Cartable is open) ----------

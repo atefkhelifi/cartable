@@ -17,6 +17,9 @@ whiteboard. Students see their timetable and join with one click.
 - Whiteboard background (teacher): put a picture or a PDF worksheet behind the drawings and move through its pages. The PDF is opened in the teacher's browser with [PDF.js](https://mozilla.github.io/pdf.js/); only the current page is shared, and it is forgotten when the class ends.
 - Waiting room: students wait until the teacher lets them in. Turn it on for a class when you plan it, or during the class.
 - Chat, a big "raise hand" button, and emoji reactions
+- Polls and quizzes: the teacher asks a question with 2 to 6 answers (and can mark the right one), sees answers come in live, then shows the results to everyone when ready
+- Group work (breakout rooms): split the class into 2 to 8 random groups, move students between groups, and visit any group. Camera, voice and chat stay inside each group; the teacher reads every group's chat and speaks to everyone from the main room. The whiteboard stays shared.
+- Class files: the teacher shares worksheets, pictures, slides, sounds or videos (up to 10 MB each, 100 MB per class) from the calendar or during class; anyone with the class code can download them. Files are deleted with the last week of their class.
 - Speaking indicator and pinning any video
 - Teacher controls: mute one or everyone, lower a hand, remove someone, lock the class, turn the waiting room on or off, lock the whiteboard, clear the board, end the class for everyone
 - Attendance list of who joined and when
@@ -87,7 +90,7 @@ own [coturn](https://github.com/coturn/coturn) server).
 | Server | Node.js, Express, Socket.IO (signaling, chat, whiteboard sync) |
 | Video | WebRTC mesh: each person connects directly to everyone else |
 | Frontend | Plain HTML, CSS and JavaScript, no build step |
-| Storage | SQLite file `data/cartable.db` (teachers, classes, attendance) |
+| Storage | SQLite file `data/cartable.db` (teachers, classes, attendance) and shared files in `data/files/` |
 
 A mesh works well for a class of about 10–16 people. For bigger classes, swap
 the mesh for an open-source SFU such as [LiveKit](https://livekit.io) or
