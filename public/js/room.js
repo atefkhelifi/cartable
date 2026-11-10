@@ -560,7 +560,7 @@
     $('#people-list').innerHTML = rows.map(([id, i]) => `
       <li>
         ${C.avatar(i.name)}
-        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</b><small>${tr(i.role === 'teacher' ? 'Teacher' : 'Student')}${i.mic === false ? ', ' + tr('muted') : ''}${i.sharing ? ', ' + tr('sharing screen') : ''}</small>${breakout.active && myRole === 'teacher' && id === 'me' ? ` <span class="grp">${esc(groupName(groupOf('me')))}</span>` : ''}</div>
+        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</b><small>${tr(i.role === 'teacher' ? 'Teacher' : 'Student')}${myRole === 'teacher' && id !== 'me' && i.role !== 'teacher' ? ', ' + tr(i.verified ? 'signed in with a code' : 'guest') : ''}${i.mic === false ? ', ' + tr('muted') : ''}${i.sharing ? ', ' + tr('sharing screen') : ''}</small>${breakout.active && myRole === 'teacher' && id === 'me' ? ` <span class="grp">${esc(groupName(groupOf('me')))}</span>` : ''}</div>
         ${i.hand ? `<span class="hand-mark" title="${tr('Hand raised')}">✋</span>` : ''}
         ${myRole === 'teacher' && id !== 'me' && breakout.active ? `<select data-move="${id}" aria-label="${esc(tr('Move {name} to a group', { name: i.name }))}">
           ${[null, ...Array.from({ length: breakout.count }, (_, k) => k)].map((g) => `<option value="${g === null ? '' : g}"${g === groupOf(id) ? ' selected' : ''}>${esc(groupName(g))}</option>`).join('')}
@@ -586,7 +586,7 @@
     if (a === 'attendance') {
       try {
         const list = await C.api(`/api/attendance/${code}`);
-        $('#att-list').innerHTML = list.length ? list.slice().reverse().map((x) => `<li><span>${esc(x.name)}${x.role === 'teacher' ? ' ' + tr('(Teacher)') : ''}</span><span class="muted">${new Date(x.at).toLocaleString(loc(), { dateStyle: 'short', timeStyle: 'short' })}</span></li>`).join('') : `<li>${tr('No one has joined yet.')}</li>`;
+        $('#att-list').innerHTML = list.length ? list.slice().reverse().map((x) => `<li><span>${esc(x.name)}${x.role === 'teacher' ? ' ' + tr('(Teacher)') : x.verified ? ' ✓' : ' ' + tr('(guest)')}</span><span class="muted">${new Date(x.at).toLocaleString(loc(), { dateStyle: 'short', timeStyle: 'short' })}</span></li>`).join('') : `<li>${tr('No one has joined yet.')}</li>`;
         $('#dlg-attendance').showModal();
       } catch (err) { C.toast(err.message); }
       return;
