@@ -10,6 +10,16 @@
   };
 
   const C = (window.Cartable = { $, $$, esc, profile: store.get('cartable.profile'), courses: [] });
+  // Teachers from before accounts existed signed in with a shared code; they sign in again.
+  if (C.profile?.role === 'teacher' && !C.profile.token) { store.del('cartable.profile'); C.profile = null; }
+
+  // Students only see classes whose link or code they have opened.
+  const ROOM_RE = /^[a-z0-9]{3}-[a-z0-9]{3}-[a-z0-9]{3}$/;
+  const myRooms = () => (store.get('cartable.rooms') || []).filter((r) => ROOM_RE.test(r));
+  C.rememberRoom = (room) => {
+    if (!ROOM_RE.test(room) || C.profile?.role === 'teacher') return;
+    store.set('cartable.rooms', [room, ...myRooms().filter((r) => r !== room)].slice(0, 50));
+  };
 
   // ---------- helpers ----------
   const pad = (n) => String(n).padStart(2, '0');
@@ -35,7 +45,7 @@
 
   C.api = async (url, opts = {}) => {
     const headers = { 'content-type': 'application/json' };
-    if (C.profile?.teacherCode) headers['x-teacher-code'] = C.profile.teacherCode;
+    if (C.profile?.token) headers.authorization = `Bearer ${C.profile.token}`;
     const res = await fetch(url, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(t(data.error || 'Something went wrong. Try again.'));
@@ -53,47 +63,97 @@
   };
   const canJoin = (c) => { const st = C.status(c); return st === 'live' || st === 'soon' || (isTeacher() && c.date === ymd(new Date()) && st !== 'done'); };
 
-  async function loadCourses() {
-    try { C.courses = (await C.api('/api/courses')).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)); }
-    catch (e) { C.toast(e.message); }
+  async function loadCourses(extraRoom) {
+    try {
+      let url = '/api/courses';
+      if (!isTeacher()) {
+        const rooms = myRooms();
+        if (extraRoom && ROOM_RE.test(extraRoom) && !rooms.includes(extraRoom)) rooms.push(extraRoom);
+        if (!rooms.length) { C.courses = []; return; }
+        url += `?rooms=${encodeURIComponent(rooms.join(','))}`;
+      }
+      C.courses = (await C.api(url)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+    } catch (e) { C.toast(e.message); }
   }
 
-  // ---------- profile ----------
-  const roleRadios = $$('input[name="role"]');
-  roleRadios.forEach((r) => r.addEventListener('change', () => { $('#teacher-code-field').hidden = r.value !== 'teacher' || !r.checked; }));
+  // ---------- profile / sign-in ----------
+  let authMode = 'login';
+  function syncWelcome() {
+    const teacher = $('input[name="role"]:checked').value === 'teacher';
+    const signup = teacher && authMode === 'signup';
+    $('#auth-mode').hidden = !teacher;
+    $('#teacher-fields').hidden = !teacher;
+    $('#school-code-field').hidden = !signup;
+    $('#name-field').hidden = teacher && !signup;
+    $('#p-name').required = !teacher || signup;
+    $('#p-user').required = teacher;
+    $('#p-pass').required = teacher;
+    $('#p-code').required = signup;
+    $('#p-pass').autocomplete = signup ? 'new-password' : 'current-password';
+    $('#p-pass').minLength = signup ? 8 : 0;
+    $$('#auth-mode [data-auth]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.auth === authMode)));
+    $('#profile-error').textContent = '';
+  }
+  $$('input[name="role"]').forEach((r) => r.addEventListener('change', syncWelcome));
+  $('#auth-mode').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-auth]');
+    if (b) { authMode = b.dataset.auth; syncWelcome(); }
+  });
 
   $('#profile-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = $('#p-name').value.trim();
     const role = $('input[name="role"]:checked').value;
     const err = $('#profile-error');
     err.textContent = '';
-    const p = { name, role };
+    let p;
     if (role === 'teacher') {
-      const code = $('#p-code').value.trim();
-      const { ok } = await C.api('/api/teacher/verify', { method: 'POST', body: JSON.stringify({ code }) });
-      if (!ok) { err.textContent = t('That teacher code is not right. Ask your school for it, or join as a student.'); return; }
-      p.teacherCode = code;
+      const body = { username: $('#p-user').value.trim(), password: $('#p-pass').value };
+      if (authMode === 'signup') Object.assign(body, { name: $('#p-name').value.trim(), schoolCode: $('#p-code').value.trim() });
+      const btn = e.submitter; if (btn) btn.disabled = true;
+      try {
+        const res = await C.api(`/api/auth/${authMode}`, { method: 'POST', body: JSON.stringify(body) });
+        p = { role, name: res.teacher.name, username: res.teacher.username, token: res.token };
+      } catch (ex) { err.textContent = ex.message; return; }
+      finally { if (btn) btn.disabled = false; }
+      $('#p-pass').value = ''; $('#p-code').value = '';
+    } else {
+      p = { role, name: $('#p-name').value.trim() };
     }
     C.profile = p;
     store.set('cartable.profile', p);
     route();
   });
 
-  $('#btn-signout').addEventListener('click', () => {
+  function signOut() {
+    if (C.profile?.token) C.api('/api/auth/logout', { method: 'POST' }).catch(() => {});
     store.del('cartable.profile');
     C.profile = null;
     location.hash = '#/today';
     route();
-  });
+  }
+  $('#btn-signout').addEventListener('click', signOut);
+
+  // Check once per page load that a teacher's session is still valid.
+  let sessionChecked = false;
+  async function checkSession() {
+    if (sessionChecked || !C.profile?.token) return true;
+    try { await C.api('/api/auth/me'); sessionChecked = true; return true; }
+    catch {
+      store.del('cartable.profile'); C.profile = null;
+      C.toast('Please sign in again.');
+      return false;
+    }
+  }
 
   // ---------- routing ----------
   async function route() {
     const [, view = 'today', arg] = (location.hash || '#/today').split('/');
+    if (C.profile && !(await checkSession())) return route();
     if (!C.profile) {
       $$('.view, #shell, #view-room').forEach((v) => (v.hidden = true));
       $('#view-welcome').hidden = false;
-      $('#p-name').focus();
+      syncWelcome();
+      ($('#name-field').hidden ? $('#p-user') : $('#p-name')).focus();
       return;
     }
     $('#view-welcome').hidden = true;
@@ -102,7 +162,7 @@
 
     if (view === 'room' && arg) {
       $('#shell').hidden = true;
-      await loadCourses();
+      await loadCourses(arg);
       const course = C.courses.find((c) => c.room === arg && C.status(c) !== 'done') || C.courses.find((c) => c.room === arg);
       window.Room.open(arg, course);
       return;
@@ -149,7 +209,7 @@
 
     const nu = $('#next-up');
     if (!next) {
-      nu.innerHTML = `<div class="next-empty"><h2>${t('No classes planned yet')}</h2><p>${t(isTeacher() ? 'Plan your first class in the calendar, or start one right now.' : 'When your teacher plans a class, it will show up here.')}</p></div>`;
+      nu.innerHTML = `<div class="next-empty"><h2>${t('No classes planned yet')}</h2><p>${t(isTeacher() ? 'Plan your first class in the calendar, or start one right now.' : 'Open the link from your teacher, or join with a code, and your classes will show up here.')}</p></div>`;
     } else {
       const st = C.status(next);
       const ms = at(next, next.start) - now;
@@ -300,14 +360,17 @@
     let v = $('#code-input').value.trim().toLowerCase();
     const m = v.match(/#\/room\/([a-z0-9-]+)/);
     if (m) v = m[1];
-    v = v.replace(/[^a-z0-9-]/g, '');
-    if (v.length < 3) return;
+    v = v.replace(/[^a-z0-9]/g, '');
+    if (v.length !== 9) { C.toast('A class code looks like abc-def-ghi.'); return; }
+    v = `${v.slice(0, 3)}-${v.slice(3, 6)}-${v.slice(6)}`;
     dlgCode.close();
     location.hash = `#/room/${v}`;
   });
   $('#btn-instant').addEventListener('click', async () => {
-    const { room } = await C.api('/api/new-room');
-    location.hash = `#/room/${room}`;
+    try {
+      const { room } = await C.api('/api/rooms', { method: 'POST' });
+      location.hash = `#/room/${room}`;
+    } catch (err) { C.toast(err.message); }
   });
 
   // ---------- .ics export ----------

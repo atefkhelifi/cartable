@@ -112,6 +112,12 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .role-opt input:checked + span { border-color: var(--blue); background: var(--blue-soft); }
 .role-opt input:focus-visible + span { box-shadow: var(--focus); }
 
+.seg { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 3px; border: 2px solid var(--line-2); border-radius: 999px; background: var(--card); }
+.seg[hidden] { display: none; }
+.seg button { min-height: 38px; border: 0; border-radius: 999px; background: none; font-family: var(--font-head); font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.seg button:focus-visible { box-shadow: var(--focus); outline: none; }
+
 .color-pick { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .color-pick legend { width: 100%; margin-bottom: .35rem; }
 .color-pick input { position: absolute; opacity: 0; }

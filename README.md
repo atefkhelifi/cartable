@@ -37,14 +37,14 @@ whiteboard. Students see their timetable and join with one click.
 
 ## Run it
 
-You need [Node.js](https://nodejs.org) 18 or newer.
+You need [Node.js](https://nodejs.org) 22.13 or newer (Cartable uses the built-in `node:sqlite`).
 
 ```bash
 npm install
 npm start
 ```
 
-Open http://localhost:3000. The default teacher code is `teach`. Change it:
+Open http://localhost:3000. Teachers pick **Teacher → Create an account** and enter the school code, which is `teach` by default. Change it:
 
 ```bash
 # macOS / Linux
@@ -59,7 +59,7 @@ $env:TEACHER_CODE="my-secret"; npm start
 
 1. Click the button above and sign in to Render with GitHub.
 2. Click **Apply**. Render builds the app and gives you a link such as `https://cartable-xxxx.onrender.com`.
-3. In Render, open the service, go to **Environment**, and copy `TEACHER_CODE`. That is the code teachers use to sign in.
+3. In Render, open the service, go to **Environment**, and copy `TEACHER_CODE`. That is the school code teachers need once, to create their account.
 4. Share the link (or a class invite link) with your students.
 
 The free plan sleeps after 15 minutes without visitors (the first visit then takes
@@ -84,7 +84,7 @@ own [coturn](https://github.com/coturn/coturn) server).
 | Server | Node.js, Express, Socket.IO (signaling, chat, whiteboard sync) |
 | Video | WebRTC mesh: each person connects directly to everyone else |
 | Frontend | Plain HTML, CSS and JavaScript, no build step |
-| Storage | `data/db.json` (classes and attendance) |
+| Storage | SQLite file `data/cartable.db` (teachers, classes, attendance) |
 
 A mesh works well for a class of about 10–16 people. For bigger classes, swap
 the mesh for an open-source SFU such as [LiveKit](https://livekit.io) or
@@ -92,9 +92,19 @@ the mesh for an open-source SFU such as [LiveKit](https://livekit.io) or
 
 ## Good to know
 
-- Sign-in is a simple name plus a shared teacher code. Before using it with real
-  children, add proper accounts (for example with your school's SSO) and review
-  your local child privacy rules (GDPR, COPPA).
+- **Teachers** have their own username and password. Creating an account needs
+  the school code (`TEACHER_CODE`). In production, sign-up stays off until you
+  set your own code. Each teacher sees and manages only their own classes.
+- **Students** type only a name. They can join a class only with a real class
+  link or code, and they see only the classes they have opened. Anyone holding a
+  class link can join, so share links only with the class, and use **Lock class**
+  once everyone is in.
+- Upgrading from 1.1: on first start, `data/db.json` is imported and renamed to
+  `db.json.migrated`. Existing classes go to the first teacher who creates an
+  account.
+- Attendance is deleted after 365 days. Change this with `ATTENDANCE_DAYS`.
+- Review your local child privacy rules (GDPR, COPPA) before using Cartable with
+  real children.
 - Video goes directly between browsers. Recordings are only made when the teacher starts one, everyone is told, and the file stays on the teacher's computer (nothing is uploaded). Get parents' consent before recording children, as your local rules require.
 
 ## License
