@@ -70,9 +70,13 @@ function client(base, sockets) {
 
 const join = (s, payload) => new Promise((resolve) => s.emit('join', payload, resolve));
 const emitAck = (s, ev, data) => new Promise((resolve) => s.emit(ev, data, resolve));
-const next = (s, ev, ms = 2000) => new Promise((resolve) => {
-  const timer = setTimeout(() => resolve('TIMEOUT'), ms);
-  s.once(ev, (d) => { clearTimeout(timer); resolve(d); });
+// Wait for the next `ev` message (or the next one for which `match` is true: earlier broadcasts
+// can still be on their way, so tests that expect a particular state should say which).
+const next = (s, ev, ms = 2000, match = () => true) => new Promise((resolve) => {
+  const done = (d) => { clearTimeout(timer); s.off(ev, onMsg); resolve(d); };
+  const onMsg = (d) => { if (match(d)) done(d); };
+  const timer = setTimeout(() => { s.off(ev, onMsg); resolve('TIMEOUT'); }, ms);
+  s.on(ev, onMsg);
 });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const today = () => new Date().toISOString().slice(0, 10);
