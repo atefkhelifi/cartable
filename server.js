@@ -77,6 +77,10 @@ sql.exec(`
   );
   CREATE INDEX IF NOT EXISTS attendance_room ON attendance(room);
 `);
+// columns added after 1.1
+if (!sql.prepare('PRAGMA table_info(courses)').all().some((c) => c.name === 'waiting_room')) {
+  sql.exec('ALTER TABLE courses ADD COLUMN waiting_room INTEGER NOT NULL DEFAULT 0');
+}
 
 const q = {
   teacherByUser: sql.prepare('SELECT * FROM teachers WHERE username = ?'),
@@ -86,14 +90,18 @@ const q = {
   addSession: sql.prepare('INSERT INTO sessions (token_hash, teacher_id, expires_at) VALUES (?, ?, ?)'),
   session: sql.prepare('SELECT t.id, t.username, t.name FROM sessions s JOIN teachers t ON t.id = s.teacher_id WHERE s.token_hash = ? AND s.expires_at > ?'),
   delSession: sql.prepare('DELETE FROM sessions WHERE token_hash = ?'),
-  addCourse: sql.prepare(`INSERT INTO courses (id, series, room, teacher_id, title, date, start_time, end_time, subject, grp, teacher, notes, color)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  addCourse: sql.prepare(`INSERT INTO courses (id, series, room, teacher_id, title, date, start_time, end_time, subject, grp, teacher, notes, color, waiting_room)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  editCourse: sql.prepare(`UPDATE courses SET title = ?, date = ?, start_time = ?, end_time = ?, subject = ?, grp = ?, notes = ?, color = ?, waiting_room = ?
+    WHERE id = ? AND teacher_id = ?`),
+  editSeries: sql.prepare(`UPDATE courses SET title = ?, start_time = ?, end_time = ?, subject = ?, grp = ?, notes = ?, color = ?, waiting_room = ?
+    WHERE series = ? AND teacher_id = ?`),
   coursesByTeacher: sql.prepare('SELECT * FROM courses WHERE teacher_id = ? ORDER BY date, start_time'),
   coursesByRoom: sql.prepare('SELECT * FROM courses WHERE room = ? ORDER BY date, start_time'),
   course: sql.prepare('SELECT * FROM courses WHERE id = ?'),
   delCourse: sql.prepare('DELETE FROM courses WHERE id = ? AND teacher_id = ?'),
   delSeries: sql.prepare('DELETE FROM courses WHERE series = ? AND teacher_id = ?'),
-  courseOwner: sql.prepare('SELECT teacher_id FROM courses WHERE room = ? LIMIT 1'),
+  courseOwner: sql.prepare('SELECT teacher_id, MAX(waiting_room) AS waiting FROM courses WHERE room = ? GROUP BY teacher_id LIMIT 1'),
   addInstant: sql.prepare('INSERT INTO instant_rooms (room, teacher_id, expires_at) VALUES (?, ?, ?)'),
   instantRoom: sql.prepare('SELECT teacher_id, expires_at FROM instant_rooms WHERE room = ?'),
   addAttendance: sql.prepare('INSERT INTO attendance (room, name, role, at) VALUES (?, ?, ?, ?)'),
@@ -115,7 +123,7 @@ if (fs.existsSync(OLD_DB)) {
       for (const c of old.courses || []) {
         if (q.course.get(c.id)) continue;
         q.addCourse.run(c.id, c.series || c.id, c.room, null, c.title || '', c.date, c.start, c.end,
-          c.subject || '', c.group || '', c.teacher || '', c.notes || '', c.color || 'blue');
+          c.subject || '', c.group || '', c.teacher || '', c.notes || '', c.color || 'blue', 0);
       }
       for (const [room, list] of Object.entries(old.attendance || {})) {
         for (const a of list) q.addAttendance.run(room, a.name || '', a.role || 'student', Date.parse(a.at) || Date.now());
@@ -140,15 +148,15 @@ setInterval(prune, 6 * 3600e3).unref();
 
 const toCourse = (r) => ({
   id: r.id, series: r.series, room: r.room, title: r.title, date: r.date, start: r.start_time, end: r.end_time,
-  subject: r.subject, group: r.grp, teacher: r.teacher, notes: r.notes, color: r.color,
+  subject: r.subject, group: r.grp, teacher: r.teacher, notes: r.notes, color: r.color, waitingRoom: !!r.waiting_room,
 });
 
-// Who owns a room code? Returns { teacherId, open } or null if the code is unknown.
+// Who owns a room code? Returns { teacherId, open, waiting } or null if the code is unknown.
 function roomInfo(room) {
   const c = q.courseOwner.get(room);
-  if (c) return { teacherId: c.teacher_id, open: true };
+  if (c) return { teacherId: c.teacher_id, open: true, waiting: !!c.waiting };
   const i = q.instantRoom.get(room);
-  if (i) return { teacherId: i.teacher_id, open: i.expires_at > Date.now() };
+  if (i) return { teacherId: i.teacher_id, open: i.expires_at > Date.now(), waiting: false };
   return null;
 }
 
@@ -261,32 +269,53 @@ app.get('/api/courses', (req, res) => {
   res.json(rooms.flatMap((r) => q.coursesByRoom.all(r)).map(toCourse));
 });
 
-app.post('/api/courses', needTeacher, (req, res) => {
-  const b = req.body || {};
+// Check the fields of a class form. Returns { error } or the cleaned fields.
+function courseFields(b) {
+  b = b || {};
   const title = String(b.title || '').trim().slice(0, 80);
-  if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !/^\d{2}:\d{2}$/.test(b.start) || !/^\d{2}:\d{2}$/.test(b.end)) {
-    return res.status(400).json({ error: 'Add a title, a date, a start time and an end time.' });
-  }
-  if (b.end <= b.start) return res.status(400).json({ error: 'The class must end after it starts.' });
-  const repeat = Math.min(Math.max(parseInt(b.repeatWeeks, 10) || 1, 1), 40);
+  const validDate = typeof b.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.date) && !Number.isNaN(Date.parse(b.date + 'T00:00:00Z'));
+  const time = (x) => typeof x === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(x);
+  if (!title || !validDate || !time(b.start) || !time(b.end)) return { error: 'Add a title, a date, a start time and an end time.' };
+  if (b.end <= b.start) return { error: 'The class must end after it starts.' };
+  return {
+    title, date: b.date, start: b.start, end: b.end,
+    subject: String(b.subject || '').slice(0, 40), group: String(b.group || '').slice(0, 40),
+    notes: String(b.notes || '').slice(0, 500),
+    color: ['blue', 'green', 'yellow', 'red', 'purple', 'orange'].includes(b.color) ? b.color : 'blue',
+    waitingRoom: b.waitingRoom === true || b.waitingRoom === '1' || b.waitingRoom === 'on',
+  };
+}
+
+app.post('/api/courses', needTeacher, (req, res) => {
+  const f = courseFields(req.body);
+  if (f.error) return res.status(400).json(f);
+  const repeat = Math.min(Math.max(parseInt(req.body.repeatWeeks, 10) || 1, 1), 40);
   const series = newId();
   const room = freeRoomCode();
-  const color = ['blue', 'green', 'yellow', 'red', 'purple', 'orange'].includes(b.color) ? b.color : 'blue';
   const created = [];
   tx(() => {
     for (let w = 0; w < repeat; w++) {
-      const d = new Date(b.date + 'T00:00:00Z');
+      const d = new Date(f.date + 'T00:00:00Z');
       d.setUTCDate(d.getUTCDate() + 7 * w);
-      const c = {
-        id: newId(), series, room, title, date: d.toISOString().slice(0, 10), start: b.start, end: b.end,
-        subject: String(b.subject || '').slice(0, 40), group: String(b.group || '').slice(0, 40),
-        teacher: req.teacher.name, notes: String(b.notes || '').slice(0, 500), color,
-      };
-      q.addCourse.run(c.id, series, room, req.teacher.id, title, c.date, c.start, c.end, c.subject, c.group, c.teacher, c.notes, color);
+      const c = { ...f, id: newId(), series, room, date: d.toISOString().slice(0, 10), teacher: req.teacher.name };
+      q.addCourse.run(c.id, series, room, req.teacher.id, c.title, c.date, c.start, c.end, c.subject, c.group, c.teacher, c.notes, c.color, c.waitingRoom ? 1 : 0);
       created.push(c);
     }
   });
   res.status(201).json(created);
+});
+
+// Edit one class, or (?series=1) every week of it. The date only changes for a single class.
+app.patch('/api/courses/:id', needTeacher, (req, res) => {
+  const c = q.course.get(req.params.id);
+  if (!c || c.teacher_id !== req.teacher.id) return res.status(404).json({ error: 'Class not found.' });
+  const all = req.query.series === '1';
+  const f = courseFields({ date: c.date, ...req.body, ...(all ? { date: c.date } : {}) });
+  if (f.error) return res.status(400).json(f);
+  const w = f.waitingRoom ? 1 : 0;
+  if (all) q.editSeries.run(f.title, f.start, f.end, f.subject, f.group, f.notes, f.color, w, c.series, req.teacher.id);
+  else q.editCourse.run(f.title, f.date, f.start, f.end, f.subject, f.group, f.notes, f.color, w, c.id, req.teacher.id);
+  res.json({ ok: true });
 });
 
 app.delete('/api/courses/:id', needTeacher, (req, res) => {
@@ -310,26 +339,77 @@ app.post('/api/rooms', needTeacher, (req, res) => {
   res.status(201).json({ room });
 });
 
+// Whiteboard background (a picture or a PDF page, turned into a JPEG by the teacher's browser).
+// It lives in memory with the live class and is gone when everyone leaves.
+const liveRoomOf = (req, res) => {
+  const room = req.params.room;
+  const r = ROOM_RE.test(room) && rooms.get(room);
+  if (!r) { res.status(404).json({ error: 'This class is not live right now.' }); return null; }
+  return r;
+};
+const ownsRoom = (req, res) => {
+  const info = roomInfo(req.params.room);
+  if (!info || info.teacherId !== req.teacher.id) { res.status(403).json({ error: 'Only the class teacher can change the whiteboard background.' }); return false; }
+  return true;
+};
+app.put('/api/rooms/:room/background', needTeacher, express.raw({ type: 'image/jpeg', limit: '3mb' }), (req, res) => {
+  if (!ownsRoom(req, res)) return;
+  const r = liveRoomOf(req, res); if (!r) return;
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) {
+    return res.status(400).json({ error: 'That picture could not be used. Try another one.' });
+  }
+  r.bg = { buf, v: Date.now() };
+  io.to(req.params.room).emit('board-bg', { v: r.bg.v });
+  res.json({ v: r.bg.v });
+});
+app.delete('/api/rooms/:room/background', needTeacher, (req, res) => {
+  if (!ownsRoom(req, res)) return;
+  const r = liveRoomOf(req, res); if (!r) return;
+  r.bg = null;
+  io.to(req.params.room).emit('board-bg', { v: 0 });
+  res.json({ ok: true });
+});
+app.get('/api/rooms/:room/background', (req, res) => {
+  const r = liveRoomOf(req, res); if (!r) return;
+  if (!r.bg) return res.status(404).json({ error: 'No background.' });
+  res.set({ 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=3600' }).send(r.bg.buf);
+});
+
 // ---------- live rooms (WebRTC signaling) ----------
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 2e5 });
 
-// room -> { peers: Map<socketId, {name, role, hand, mic, cam}>, locked, boardLocked, strokes: [], points }
+// room -> { peers: Map<socketId, {name, role, hand, mic, cam}>, lobby: Map<socketId, {name, admit}>,
+//           locked, boardLocked, waiting, strokes: [{ s, by }], points, bg, recording }
 const rooms = new Map();
-function getRoom(id) {
-  if (!rooms.has(id)) rooms.set(id, { peers: new Map(), locked: false, boardLocked: false, strokes: [], points: 0, recording: null });
+function getRoom(id, info) {
+  if (!rooms.has(id)) {
+    rooms.set(id, { peers: new Map(), lobby: new Map(), locked: false, boardLocked: false, waiting: !!info?.waiting, strokes: [], points: 0, bg: null, recording: null });
+  }
   return rooms.get(id);
 }
 const peerList = (r) => [...r.peers].map(([id, p]) => ({ id, ...p }));
+const lobbyList = (r) => [...r.lobby].map(([id, p]) => ({ id, name: p.name }));
+const flags = (r) => ({ locked: r.locked, boardLocked: r.boardLocked, waiting: r.waiting });
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+function sendLobby(r) {
+  const list = lobbyList(r);
+  for (const [id, p] of r.peers) if (p.role === 'teacher') io.to(id).emit('lobby', list);
+}
+function dropRoomIfEmpty(id) {
+  const r = rooms.get(id);
+  if (r && r.peers.size === 0 && r.lobby.size === 0) rooms.delete(id);
+}
 
-// Whiteboard strokes are checked before they are stored or relayed.
+// Whiteboard items are checked before they are stored or relayed.
+// pen: {id, c, w, pts}   eraser: {id, e: 1, w, pts}   shape: {id, k, c, w, pts: [a, b]}   text: {id, k: 'text', c, s, pts: [a], txt}
 const MAX_STROKE_POINTS = 1000, MAX_BOARD_POINTS = 200000;
+const SHAPES = ['line', 'arrow', 'rect', 'ellipse'];
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 function cleanStroke(s) {
   if (!isObj(s) || !Array.isArray(s.pts) || s.pts.length < 1 || s.pts.length > MAX_STROKE_POINTS) return null;
-  const w = Number(s.w);
-  if (!Number.isFinite(w)) return null;
+  if (typeof s.id !== 'string' || !/^[a-z0-9]{1,16}$/i.test(s.id)) return null;
   const pts = [];
   for (const p of s.pts) {
     if (!Array.isArray(p) || p.length !== 2) return null;
@@ -337,9 +417,17 @@ function cleanStroke(s) {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     pts.push([clamp(Math.round(x * 10) / 10, -100, 1700), clamp(Math.round(y * 10) / 10, -100, 1100)]);
   }
-  if (s.e) return { e: 1, w: clamp(w, 1, 100), pts };
+  const w = clamp(Number(s.w) || 4, 1, 100);
+  if (s.e) return { id: s.id, e: 1, w, pts };
   if (typeof s.c !== 'string' || !/^#[0-9a-f]{6}$/i.test(s.c)) return null;
-  return { c: s.c, w: clamp(w, 1, 100), pts };
+  if (s.k === undefined) return { id: s.id, c: s.c, w, pts };
+  if (SHAPES.includes(s.k)) return pts.length === 2 ? { id: s.id, k: s.k, c: s.c, w, pts } : null;
+  if (s.k === 'text') {
+    const txt = typeof s.txt === 'string' ? s.txt.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 200) : '';
+    if (!txt || pts.length !== 1) return null;
+    return { id: s.id, k: 'text', c: s.c, s: clamp(Number(s.s) || 24, 10, 120), pts, txt };
+  }
+  return null;
 }
 
 const clientIp = (socket) => (socket.handshake.headers['x-forwarded-for'] || '').split(',')[0].trim() || socket.handshake.address;
@@ -369,23 +457,48 @@ io.on('connection', (socket) => {
     }
     const t = teacherFromToken(token);
     const teacher = !!t && t.id === info.teacherId;
-    const r = getRoom(room);
-    if (r.locked && !teacher) return reply({ error: 'The teacher has locked this class. Ask them to unlock it.' });
-    if (r.peers.size >= 16) return reply({ error: 'This class is full (16 people max).' });
-    roomId = room;
+    const r = getRoom(room, info);
+    if (r.locked && !teacher) { dropRoomIfEmpty(room); return reply({ error: 'The teacher has locked this class. Ask them to unlock it.' }); }
     const myName = (teacher ? t.name : String(name || '').trim()).slice(0, 30) || 'Guest';
-    me = { name: myName, role: teacher ? 'teacher' : 'student', hand: false, mic: true, cam: true };
-    socket.join(room);
-    const others = peerList(r);
-    r.peers.set(socket.id, me);
-    q.addAttendance.run(room, me.name, me.role, Date.now());
-    socket.to(room).emit('peer-joined', { id: socket.id, ...me });
-    reply({ ok: true, id: socket.id, role: me.role, name: me.name, peers: others, strokes: r.strokes, locked: r.locked, boardLocked: r.boardLocked, recording: !!r.recording });
+
+    // Put this person in the class. Returns the welcome message, or an error if the class is full.
+    const enter = () => {
+      if (r.peers.size >= 16) return { error: 'This class is full (16 people max).' };
+      me = { name: myName, role: teacher ? 'teacher' : 'student', hand: false, mic: true, cam: true };
+      socket.join(room);
+      const others = peerList(r);
+      r.peers.set(socket.id, me);
+      q.addAttendance.run(room, me.name, me.role, Date.now());
+      socket.to(room).emit('peer-joined', { id: socket.id, ...me });
+      return {
+        ok: true, id: socket.id, role: me.role, name: me.name, peers: others, strokes: r.strokes.map((x) => x.s),
+        ...flags(r), recording: !!r.recording, bg: r.bg ? r.bg.v : 0, lobby: teacher ? lobbyList(r) : [],
+      };
+    };
+
+    roomId = room;
+    if (r.waiting && !teacher) {
+      if (r.lobby.size >= 30) { roomId = null; dropRoomIfEmpty(room); return reply({ error: 'The waiting room is full. Try again in a moment.' }); }
+      r.lobby.set(socket.id, {
+        name: myName,
+        admit: () => {
+          r.lobby.delete(socket.id);
+          const res = enter();
+          socket.emit('admitted', res);
+          if (res.error) socket.disconnect(true);
+        },
+      });
+      sendLobby(r);
+      return reply({ inLobby: true });
+    }
+    const res = enter();
+    if (res.error) { roomId = null; dropRoomIfEmpty(room); }
+    reply(res);
   });
 
   // relay WebRTC signals to one peer
   on('signal', (msg) => {
-    if (!roomId || !isObj(msg) || typeof msg.to !== 'string' || !isObj(msg.data) || !signalLimit(1)) return;
+    if (!roomId || !me || !isObj(msg) || typeof msg.to !== 'string' || !isObj(msg.data) || !signalLimit(1)) return;
     if (!getRoom(roomId).peers.has(msg.to)) return;
     io.to(msg.to).emit('signal', { from: socket.id, data: msg.data });
   });
@@ -413,10 +526,22 @@ io.on('connection', (socket) => {
     if (r.boardLocked && me.role !== 'teacher') return;
     const stroke = cleanStroke(raw);
     if (!stroke) return;
-    r.strokes.push(stroke);
+    r.strokes.push({ s: stroke, by: socket.id });
     r.points += stroke.pts.length;
-    while (r.strokes.length > 5000 || r.points > MAX_BOARD_POINTS) r.points -= r.strokes.shift().pts.length;
+    while (r.strokes.length > 5000 || r.points > MAX_BOARD_POINTS) r.points -= r.strokes.shift().s.pts.length;
     socket.to(roomId).emit('draw', stroke);
+  });
+
+  // undo: remove every piece of one of my own strokes
+  on('undo', (id) => {
+    if (!roomId || !me || typeof id !== 'string' || !drawLimit(1)) return;
+    const r = getRoom(roomId);
+    if (r.boardLocked && me.role !== 'teacher') return;
+    const keep = r.strokes.filter((x) => !(x.s.id === id && x.by === socket.id));
+    if (keep.length === r.strokes.length) return;
+    r.strokes = keep;
+    r.points = keep.reduce((n, x) => n + x.s.pts.length, 0);
+    socket.to(roomId).emit('board-remove', id);
   });
 
   // teacher-only controls
@@ -425,15 +550,32 @@ io.on('connection', (socket) => {
     const { action, target } = msg;
     const r = getRoom(roomId);
     const has = typeof target === 'string' && r.peers.has(target);
+    const waiting = typeof target === 'string' && r.lobby.get(target);
     switch (action) {
       case 'clear-board': r.strokes = []; r.points = 0; io.to(roomId).emit('clear-board'); break;
-      case 'lock': r.locked = !r.locked; io.to(roomId).emit('room-flags', { locked: r.locked, boardLocked: r.boardLocked }); break;
-      case 'lock-board': r.boardLocked = !r.boardLocked; io.to(roomId).emit('room-flags', { locked: r.locked, boardLocked: r.boardLocked }); break;
+      case 'lock': r.locked = !r.locked; io.to(roomId).emit('room-flags', flags(r)); break;
+      case 'lock-board': r.boardLocked = !r.boardLocked; io.to(roomId).emit('room-flags', flags(r)); break;
+      case 'waiting':
+        r.waiting = !r.waiting;
+        if (!r.waiting) [...r.lobby.values()].forEach((p) => p.admit());
+        io.to(roomId).emit('room-flags', flags(r));
+        sendLobby(r);
+        break;
+      case 'admit': if (waiting) { waiting.admit(); sendLobby(r); } break;
+      case 'admit-all': [...r.lobby.values()].forEach((p) => p.admit()); sendLobby(r); break;
+      case 'deny':
+        if (waiting) {
+          r.lobby.delete(target);
+          io.to(target).emit('denied');
+          io.sockets.sockets.get(target)?.disconnect(true);
+          sendLobby(r);
+        }
+        break;
       case 'mute-all': socket.to(roomId).emit('force-mute'); break;
       case 'mute': if (has) io.to(target).emit('force-mute'); break;
       case 'lower-hand': if (has) io.to(target).emit('force-lower-hand'); break;
       case 'remove': if (has) { io.to(target).emit('removed'); io.sockets.sockets.get(target)?.disconnect(true); } break;
-      case 'end': io.to(roomId).emit('ended'); break;
+      case 'end': io.to(roomId).emit('ended'); [...r.lobby.keys()].forEach((id) => io.to(id).emit('ended')); break;
       case 'record-start': r.recording = socket.id; io.to(roomId).emit('recording', { on: true, name: me.name }); break;
       case 'record-stop': if (r.recording) { r.recording = null; io.to(roomId).emit('recording', { on: false }); } break;
     }
@@ -441,11 +583,14 @@ io.on('connection', (socket) => {
 
   on('disconnect', () => {
     if (!roomId) return;
-    const r = getRoom(roomId);
-    r.peers.delete(socket.id);
-    if (r.recording === socket.id) { r.recording = null; socket.to(roomId).emit('recording', { on: false }); }
-    socket.to(roomId).emit('peer-left', { id: socket.id });
-    if (r.peers.size === 0) rooms.delete(roomId);
+    const r = rooms.get(roomId);
+    if (!r) return;
+    if (r.lobby.delete(socket.id)) sendLobby(r);
+    if (r.peers.delete(socket.id)) {
+      if (r.recording === socket.id) { r.recording = null; socket.to(roomId).emit('recording', { on: false }); }
+      socket.to(roomId).emit('peer-left', { id: socket.id });
+    }
+    dropRoomIfEmpty(roomId);
   });
 });
 

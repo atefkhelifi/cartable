@@ -13,10 +13,12 @@ whiteboard. Students see their timetable and join with one click.
 **Live classroom**
 - Video and voice calls between the teacher and up to 15 students (peer-to-peer WebRTC)
 - Screen sharing, shown big on everyone's stage automatically
-- Shared whiteboard with colours, an eraser, a "show big" mode and "Save as image" (PNG) for teachers and students
+- Shared whiteboard with a pen, lines, arrows, rectangles, circles, text, colours and an eraser; undo and redo (`Ctrl+Z` / `Ctrl+Y`) for your own drawings; a "show big" mode; and "Save as image" (PNG)
+- Whiteboard background (teacher): put a picture or a PDF worksheet behind the drawings and move through its pages. The PDF is opened in the teacher's browser with [PDF.js](https://mozilla.github.io/pdf.js/); only the current page is shared, and it is forgotten when the class ends.
+- Waiting room: students wait until the teacher lets them in. Turn it on for a class when you plan it, or during the class.
 - Chat, a big "raise hand" button, and emoji reactions
 - Speaking indicator and pinning any video
-- Teacher controls: mute one or everyone, lower a hand, remove someone, lock the class, lock the whiteboard, clear the board, end the class for everyone
+- Teacher controls: mute one or everyone, lower a hand, remove someone, lock the class, turn the waiting room on or off, lock the whiteboard, clear the board, end the class for everyone
 - Attendance list of who joined and when
 - Class recording (teacher only): records the class as the teacher sees it, with everyone's voices, and saves an MP4 (or WebM) to the teacher's computer. Everyone sees a red "Recording" badge while it runs. Works in Chrome and Edge on a computer; when Chrome asks, pick the Cartable tab and keep "Also share tab audio" on.
 - Keyboard shortcuts: `M` microphone, `V` camera, `H` raise hand
@@ -24,7 +26,8 @@ whiteboard. Students see their timetable and join with one click.
 **Timetable and calendar**
 - Month calendar with colour-coded classes
 - "Today" page with the next class, a countdown, and what to bring
-- Weekly repeating classes (up to a whole school year)
+- Weekly repeating classes (up to a whole school year), editable one day at a time or every week at once
+- Class reminders: a browser notification 5 minutes before each class while Cartable is open in a tab
 - Students can join from 10 minutes before a class starts
 - Invite links and class codes
 - Download every class as an `.ics` file for Google Calendar, Outlook or Apple Calendar
