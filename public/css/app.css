@@ -571,3 +571,59 @@ button.poll-choice:hover:not(:disabled) { border-color: var(--blue); }
 .file-list .empty { justify-content: center; color: var(--ink-3); border: 0; padding: 1.5rem 0; }
 .poll-voters { margin: .4rem 0 0; padding-inline-start: 1.2rem; font-size: .85rem; color: var(--ink-2); }
 .poll-panel details summary { cursor: pointer; font-weight: 700; color: var(--ink-2); }
+
+/* ---------- homework, class lists, parent view ---------- */
+body.is-parent .not-parent { display: none !important; }
+.role-pick { grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); }
+.split { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+@media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+.hw-list, .roster-list, .stu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+.hw-list.panel { padding: .6rem; }
+.hw-list .empty, .roster-list .empty { color: var(--ink-3); padding: 1rem .5rem; text-align: center; }
+.hw-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; padding: .7rem .8rem; text-align: start;
+  border: 2px solid transparent; border-radius: var(--r-md); background: none; color: var(--ink); cursor: pointer; }
+.hw-item:hover { background: var(--paper); }
+.hw-item.sel { border-color: var(--blue); background: var(--blue-soft); }
+.hw-item b { font-family: var(--font-head); font-weight: 600; font-size: 1.05rem; }
+.hw-item small { color: var(--ink-3); }
+.chip-status { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--paper); color: var(--ink-2); white-space: nowrap; }
+.chip-status.ok { background: #DDF3E7; color: #17663F; }
+.chip-status.late { background: #FDE3E0; color: #B42318; }
+.chip-status.todo { background: #FFF4D1; color: #7A5600; }
+.hw-detail { display: flex; flex-direction: column; gap: .8rem; min-width: 0; }
+.hw-head h2 { margin: 0; }
+.hw-head p { margin: .2rem 0 0; }
+.hw-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--paper); border-radius: var(--r-md); padding: .8rem 1rem; margin: 0; }
+.hw-detail h3.sub, #roster-detail h3.sub { margin: .6rem 0 0; font-size: 1rem; color: var(--ink-2); }
+.hw-state { margin: 0; font-weight: 700; }
+.mark-box { border: 2px solid var(--green); background: #EEF9F3; border-radius: var(--r-md); padding: .8rem 1rem; }
+.mark-box b { font-family: var(--font-head); font-size: 1.4rem; }
+.mark-box p { margin: .3rem 0 0; white-space: pre-wrap; }
+.file-btn { align-self: flex-start; }
+.stu-row { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .45rem .5rem; border: 2px solid transparent; border-radius: var(--r-md); background: none; text-align: start; color: var(--ink); }
+button.stu-row { cursor: pointer; }
+button.stu-row:hover:not(:disabled) { background: var(--paper); }
+button.stu-row:disabled { cursor: default; }
+.stu-row.sel { border-color: var(--blue); background: var(--blue-soft); }
+.stu-row .avatar { width: 32px; height: 32px; font-size: .85rem; flex: none; }
+.stu-row .nm { flex: 1 1 140px; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+.stu-row .nm small { display: block; font-weight: 400; color: var(--ink-3); }
+.stu-row .acts { display: flex; gap: .3rem; flex-wrap: wrap; }
+.sub-card { border-top: 2px solid var(--line); padding-top: .8rem; display: flex; flex-direction: column; gap: .6rem; }
+.sub-card h3 { margin: 0; }
+.mark-field { max-width: 220px; }
+.roster-name { align-items: flex-end; }
+.add-students { border-top: 2px solid var(--line); padding-top: 1rem; margin-top: 1rem; }
+#roster-detail { display: flex; flex-direction: column; gap: .6rem; }
+.code-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; max-height: 55vh; overflow-y: auto; }
+.code-card { border: 2px dashed var(--line-2); border-radius: var(--r-md); padding: .8rem; break-inside: avoid; }
+.code-card h3 { margin: 0; font-family: var(--font-head); }
+.code-card p { margin: .35rem 0 0; }
+.code-card code { display: block; font-size: 1.25rem; font-weight: 700; letter-spacing: .04em; direction: ltr; text-align: start; }
+.print-only { display: none; }
+@media print {
+  body > *:not(#print-cards) { display: none !important; }
+  #print-cards { display: grid !important; grid-template-columns: 1fr 1fr; gap: 10mm; }
+  #print-cards .code-card { border: 1.5px dashed #555; }
+  body { background: #fff !important; }
+}

@@ -53,6 +53,10 @@
   };
 
   const isTeacher = () => C.profile?.role === 'teacher';
+  const isParent = () => C.profile?.role === 'parent';
+  // signed in with a code (students) or as a teacher or parent: can see homework
+  const hasAccount = () => !!C.profile?.token;
+  Object.assign(C, { isTeacher, isParent, hasAccount });
   // joinable from 10 minutes before start until the end (teachers: anytime that day)
   C.status = (c, now = new Date()) => {
     const s = at(c, c.start), e = at(c, c.end);
@@ -61,7 +65,7 @@
     if (s - now <= 10 * 60e3) return 'soon';
     return 'later';
   };
-  const canJoin = (c) => { const st = C.status(c); return st === 'live' || st === 'soon' || (isTeacher() && c.date === ymd(new Date()) && st !== 'done'); };
+  const canJoin = (c) => { if (isParent()) return false; const st = C.status(c); return st === 'live' || st === 'soon' || (isTeacher() && c.date === ymd(new Date()) && st !== 'done'); };
 
   async function loadCourses(extraRoom) {
     try {
@@ -69,23 +73,33 @@
       if (!isTeacher()) {
         const rooms = myRooms();
         if (extraRoom && ROOM_RE.test(extraRoom) && !rooms.includes(extraRoom)) rooms.push(extraRoom);
-        if (!rooms.length) { C.courses = []; return; }
-        url += `?rooms=${encodeURIComponent(rooms.join(','))}`;
+        // guests with no class codes have nothing to load; signed-in students and parents get their class list's classes
+        if (!rooms.length && !hasAccount()) { C.courses = []; return; }
+        if (rooms.length && !isParent()) url += `?rooms=${encodeURIComponent(rooms.join(','))}`;
       }
       C.courses = (await C.api(url)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
     } catch (e) { C.toast(e.message); }
   }
 
   // ---------- profile / sign-in ----------
-  let authMode = 'login';
+  let authMode = 'login', studentMode = 'code';
   function syncWelcome() {
-    const teacher = $('input[name="role"]:checked').value === 'teacher';
+    const role = $('input[name="role"]:checked').value;
+    const teacher = role === 'teacher', parent = role === 'parent';
     const signup = teacher && authMode === 'signup';
+    const byCode = parent || (role === 'student' && studentMode === 'code');
+    $('#student-mode').hidden = role !== 'student';
+    $$('#student-mode [data-smode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.smode === studentMode)));
+    $('#code-field').hidden = !byCode;
+    $('#p-pupil-code').required = byCode;
+    $('#code-label').textContent = t(parent ? 'Parent code' : 'My code');
+    $('#code-hint').textContent = t(parent ? "Your child's teacher gave you this code. It starts with p-." : 'Your teacher gave you this code.');
+    $('#p-pupil-code').placeholder = parent ? 'p-abcde-23456' : 'abcd-2345';
     $('#auth-mode').hidden = !teacher;
     $('#teacher-fields').hidden = !teacher;
     $('#school-code-field').hidden = !signup;
-    $('#name-field').hidden = teacher && !signup;
-    $('#p-name').required = !teacher || signup;
+    $('#name-field').hidden = (teacher && !signup) || byCode;
+    $('#p-name').required = !$('#name-field').hidden;
     $('#p-user').required = teacher;
     $('#p-pass').required = teacher;
     $('#p-code').required = signup;
@@ -94,10 +108,15 @@
     $$('#auth-mode [data-auth]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.auth === authMode)));
     $('#profile-error').textContent = '';
   }
-  $$('input[name="role"]').forEach((r) => r.addEventListener('change', syncWelcome));
+  const focusWelcome = () => ['#p-pupil-code', '#p-name', '#p-user'].map((x) => $(x)).find((el) => !el.closest('[hidden]'))?.focus();
+  $$('input[name="role"]').forEach((r) => r.addEventListener('change', () => { syncWelcome(); focusWelcome(); }));
   $('#auth-mode').addEventListener('click', (e) => {
     const b = e.target.closest('[data-auth]');
     if (b) { authMode = b.dataset.auth; syncWelcome(); }
+  });
+  $('#student-mode').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-smode]');
+    if (b) { studentMode = b.dataset.smode; syncWelcome(); }
   });
 
   $('#profile-form').addEventListener('submit', async (e) => {
@@ -116,6 +135,20 @@
       } catch (ex) { err.textContent = ex.message; return; }
       finally { if (btn) btn.disabled = false; }
       $('#p-pass').value = ''; $('#p-code').value = '';
+    } else if (role === 'parent' || studentMode === 'code') {
+      const btn = e.submitter; if (btn) btn.disabled = true;
+      try {
+        const res = await C.api('/api/auth/code', { method: 'POST', body: JSON.stringify({ code: $('#p-pupil-code').value }) });
+        if (res.role !== role) {
+          // a student code typed as a parent, or the other way round
+          fetch('/api/auth/logout', { method: 'POST', headers: { authorization: `Bearer ${res.token}` } }).catch(() => {});
+          err.textContent = t(res.role === 'parent' ? 'This is a parent code. Choose Parent above to use it.' : 'This is a student code. Choose Student above to use it.');
+          return;
+        }
+        p = { role, name: res.name, token: res.token, rosterName: res.rosterName };
+      } catch (ex) { err.textContent = ex.message; return; }
+      finally { if (btn) btn.disabled = false; }
+      $('#p-pupil-code').value = '';
     } else {
       p = { role, name: $('#p-name').value.trim() };
     }
@@ -153,14 +186,22 @@
       $$('.view, #shell, #view-room').forEach((v) => (v.hidden = true));
       $('#view-welcome').hidden = false;
       syncWelcome();
-      ($('#name-field').hidden ? $('#p-user') : $('#p-name')).focus();
+      focusWelcome();
       return;
     }
     $('#view-welcome').hidden = true;
     syncRemindButton();
     document.body.classList.toggle('is-teacher', isTeacher());
-    $('#me-chip').innerHTML = `${C.avatar(C.profile.name)}<div><b>${esc(C.profile.name)}</b><small>${t(isTeacher() ? 'Teacher' : 'Student')}</small></div>`;
+    document.body.classList.toggle('is-parent', isParent());
+    const roleLabel = isTeacher() ? t('Teacher') : isParent() ? t('Parent') : C.profile.rosterName ? t('Student, {list}', { list: C.profile.rosterName }) : t('Student');
+    $('#me-chip').innerHTML = `${C.avatar(C.profile.name)}<div><b>${esc(isParent() ? t('Parent of {name}', { name: C.profile.name }) : C.profile.name)}</b><small>${esc(roleLabel)}</small></div>`;
+    $('#nav-homework').hidden = !hasAccount();
+    $('#nav-classes').hidden = !isTeacher();
+    $('#nav-attendance').hidden = !isParent();
 
+    if (view === 'room' && isParent()) { location.hash = '#/today'; return; }
+    const allowed = { homework: hasAccount(), classes: isTeacher(), attendance: isParent() };
+    if (view in allowed && !allowed[view]) { location.hash = '#/today'; return; }
     if (view === 'room' && arg) {
       $('#shell').hidden = true;
       await loadCourses(arg);
@@ -177,6 +218,7 @@
     await loadCourses();
     if (view === 'today') renderToday();
     if (view === 'calendar') renderCalendar();
+    if (window.School && view in allowed) window.School.show(view);
   }
   window.addEventListener('hashchange', route);
   C.route = route;
@@ -201,7 +243,7 @@
   function renderToday() {
     const now = new Date();
     const h = now.getHours();
-    $('#today-greeting').textContent = t(h < 12 ? 'Good morning, {name}' : h < 18 ? 'Good afternoon, {name}' : 'Good evening, {name}', { name: C.profile.name });
+    $('#today-greeting').textContent = isParent() ? t("{name}'s day", { name: C.profile.name }) : t(h < 12 ? 'Good morning, {name}' : h < 18 ? 'Good afternoon, {name}' : 'Good evening, {name}', { name: C.profile.name });
     $('#today-date').textContent = now.toLocaleDateString(loc(), { weekday: 'long', day: 'numeric', month: 'long' });
 
     const today = C.courses.filter((c) => c.date === ymd(now));
@@ -210,7 +252,7 @@
 
     const nu = $('#next-up');
     if (!next) {
-      nu.innerHTML = `<div class="next-empty"><h2>${t('No classes planned yet')}</h2><p>${t(isTeacher() ? 'Plan your first class in the calendar, or start one right now.' : 'Open the link from your teacher, or join with a code, and your classes will show up here.')}</p></div>`;
+      nu.innerHTML = `<div class="next-empty"><h2>${t('No classes planned yet')}</h2><p>${t(isTeacher() ? 'Plan your first class in the calendar, or start one right now.' : isParent() ? "When your child's teacher plans a class, it will show up here." : 'Open the link from your teacher, or join with a code, and your classes will show up here.')}</p></div>`;
     } else {
       const st = C.status(next);
       const ms = at(next, next.start) - now;
@@ -224,7 +266,7 @@
             ${next.notes ? `<p class="notes"><b>${t('Bring:')}</b> ${esc(next.notes)}</p>` : ''}
           </div>
           <div>
-            ${joinButton(next, true) || `<p class="countdown">${t('Starts in {time}', { time: relTime(ms) })}</p><p class="muted small">${t('You can join 10 minutes before.')}</p>`}
+            ${joinButton(next, true) || `<p class="countdown">${t('Starts in {time}', { time: relTime(ms) })}</p>${isParent() ? '' : `<p class="muted small">${t('You can join 10 minutes before.')}</p>`}`}
           </div>
         </article>`;
     }
@@ -350,6 +392,13 @@
       f.date.value = date || ymd(new Date());
     }
     $('#repeat-field').hidden = !!editing;
+    // class lists for the "Class list" choice
+    const sel = $('#course-roster');
+    sel.length = 1;
+    C.api('/api/rosters').then((list) => {
+      for (const r of list) sel.add(new Option(r.name, r.id));
+      sel.value = editing?.rosterId || '';
+    }).catch(() => {});
     $('#course-dlg-title').textContent = t(editing ? 'Edit class' : 'Plan a class');
     $('#course-submit').textContent = t(editing ? 'Save changes' : 'Add to calendar');
     $('#course-error').textContent = '';

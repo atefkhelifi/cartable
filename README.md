@@ -26,6 +26,12 @@ whiteboard. Students see their timetable and join with one click.
 - Class recording (teacher only): records the class as the teacher sees it, with everyone's voices, and saves an MP4 (or WebM) to the teacher's computer. Everyone sees a red "Recording" badge while it runs. Works in Chrome and Edge on a computer; when Chrome asks, pick the Cartable tab and keep "Also share tab audio" on.
 - Keyboard shortcuts: `M` microphone, `V` camera, `H` raise hand
 
+**Class lists, homework and parents**
+- Class lists: the teacher adds students (one name per line) and Cartable makes a sign-in code for each student (like `k7pm-w3xa`) and one for a parent (like `p-x4kq9-m2rtw`). Codes are shown once, on printable cards; the teacher can make new ones if a code is lost.
+- Classes planned for a class list show up on those students' timetables automatically. In a live class, the teacher sees who signed in with a code and who joined as a guest.
+- Homework: give homework to a class list with instructions, files and a due date. Students write an answer and add files or photos, hand in (or take it back) until it is marked. The teacher sees who handed in, late work, and gives a mark and a comment.
+- Parent view (read-only): the child's timetable, homework with marks and comments, and the live classes the child joined.
+
 **Timetable and calendar**
 - Month calendar with colour-coded classes
 - "Today" page with the next class, a countdown, and what to bring
@@ -90,7 +96,7 @@ own [coturn](https://github.com/coturn/coturn) server).
 | Server | Node.js, Express, Socket.IO (signaling, chat, whiteboard sync) |
 | Video | WebRTC mesh: each person connects directly to everyone else |
 | Frontend | Plain HTML, CSS and JavaScript, no build step |
-| Storage | SQLite file `data/cartable.db` (teachers, classes, attendance) and shared files in `data/files/` |
+| Storage | SQLite file `data/cartable.db` (teachers, class lists, classes, homework, attendance) and files in `data/files/` |
 
 A mesh works well for a class of about 10–16 people. For bigger classes, swap
 the mesh for an open-source SFU such as [LiveKit](https://livekit.io) or
@@ -101,10 +107,13 @@ the mesh for an open-source SFU such as [LiveKit](https://livekit.io) or
 - **Teachers** have their own username and password. Creating an account needs
   the school code (`TEACHER_CODE`). In production, sign-up stays off until you
   set your own code. Each teacher sees and manages only their own classes.
-- **Students** type only a name. They can join a class only with a real class
-  link or code, and they see only the classes they have opened. Anyone holding a
-  class link can join, so share links only with the class, and use **Lock class**
-  once everyone is in.
+- **Students** sign in with the code from their class list, or join as a guest
+  with only a name and a class link. Guests see only the classes they have
+  opened, and anyone holding a class link can join, so share links only with the
+  class and use **Lock class** or the waiting room once everyone is in.
+- **Codes** are stored only as keyed hashes. The key is `CODE_SECRET` (or a
+  `secret.key` file Cartable makes in the data folder); if it changes, every
+  student and parent code stops working. Wrong codes are slowed down per address.
 - Upgrading from 1.1: on first start, `data/db.json` is imported and renamed to
   `db.json.migrated`. Existing classes go to the first teacher who creates an
   account.
