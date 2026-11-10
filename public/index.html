@@ -73,6 +73,10 @@
       </a>
       <div class="rail-spacer"></div>
       <div class="lang-switch" role="group" aria-label="Language"><button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="fr" aria-pressed="false">FR</button><button type="button" data-lang="ar" aria-pressed="false" aria-label="العربية" lang="ar">ع</button></div>
+      <button class="rail-link" id="btn-remind" type="button" aria-pressed="false" title="Get a notification 5 minutes before each class while Cartable is open">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>
+        <span>Reminders</span>
+      </button>
       <div class="me-chip" id="me-chip"></div>
       <button class="rail-link" id="btn-signout" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>
@@ -161,7 +165,7 @@
       <aside class="side" id="side">
         <div class="tabs" role="tablist">
           <button role="tab" class="tab" data-tab="chat" aria-selected="true">Chat <span class="badge" id="chat-badge" hidden></span></button>
-          <button role="tab" class="tab" data-tab="people" aria-selected="false">People <span class="count" id="people-count">1</span></button>
+          <button role="tab" class="tab" data-tab="people" aria-selected="false">People <span class="count" id="people-count">1</span> <span class="badge" id="lobby-badge" hidden></span></button>
           <button role="tab" class="tab" data-tab="board" aria-selected="false">Whiteboard</button>
         </div>
 
@@ -177,31 +181,73 @@
           <div class="teacher-only teacher-tools">
             <button class="btn btn-ghost btn-sm" data-t="mute-all" type="button">Mute everyone</button>
             <button class="btn btn-ghost btn-sm" data-t="lock" id="t-lock" type="button">Lock class</button>
+            <button class="btn btn-ghost btn-sm" data-t="waiting" id="t-waiting" type="button">Turn on waiting room</button>
             <button class="btn btn-ghost btn-sm" data-t="attendance" type="button">Attendance</button>
           </div>
+          <section class="lobby teacher-only" id="lobby" hidden>
+            <div class="lobby-head"><b>Waiting to join</b><button class="btn btn-primary btn-sm" data-t="admit-all" type="button">Let everyone in</button></div>
+            <ul class="people" id="lobby-list"></ul>
+          </section>
           <ul class="people" id="people-list"></ul>
         </div>
 
         <div class="tab-panel board-panel" id="tab-board" hidden>
           <div class="board-tools">
+            <div class="tool-pick" role="group" aria-label="Drawing tools">
+              <button class="tool" data-tool="pen" aria-pressed="true" aria-label="Pen" title="Pen"><svg viewBox="0 0 24 24"><path d="M4 20l1.5-5L16 4.5a2.1 2.1 0 0 1 3 3L8.5 18z"/><path d="M14 6.5l3 3"/></svg></button>
+              <button class="tool" data-tool="line" aria-pressed="false" aria-label="Line" title="Line"><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg></button>
+              <button class="tool" data-tool="arrow" aria-pressed="false" aria-label="Arrow" title="Arrow"><svg viewBox="0 0 24 24"><path d="M5 19L19 5M10 5h9v9"/></svg></button>
+              <button class="tool" data-tool="rect" aria-pressed="false" aria-label="Rectangle" title="Rectangle"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+              <button class="tool" data-tool="ellipse" aria-pressed="false" aria-label="Circle" title="Circle"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="7"/></svg></button>
+              <button class="tool" data-tool="text" aria-pressed="false" aria-label="Text" title="Text"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
+              <button class="tool" data-tool="eraser" aria-pressed="false" aria-label="Eraser" title="Eraser"><svg viewBox="0 0 24 24"><path d="M8 20h12M5.5 14.5l8-8a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3L12 18H9z"/></svg></button>
+            </div>
             <div class="swatches" id="swatches">
               <button class="sw" data-c="#1B2A4A" aria-label="Ink" aria-pressed="true"></button>
               <button class="sw" data-c="#2F6FED" aria-label="Blue"></button>
               <button class="sw" data-c="#2BA36B" aria-label="Green"></button>
               <button class="sw" data-c="#F0584A" aria-label="Red"></button>
               <button class="sw" data-c="#F29E1F" aria-label="Orange"></button>
-              <button class="sw sw-eraser" data-c="eraser" aria-label="Eraser"></button>
             </div>
             <input type="range" id="brush" min="2" max="18" value="4" aria-label="Brush size">
+            <div class="tool-pick" role="group" aria-label="History">
+              <button class="tool" id="board-undo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+              <button class="tool" id="board-redo" type="button" aria-label="Redo" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+            </div>
+          </div>
+          <div class="board-tools">
             <button class="btn btn-ghost btn-sm teacher-only" data-t="lock-board" id="t-lock-board" type="button">Only I can draw</button>
             <button class="btn btn-ghost btn-sm teacher-only" data-t="clear-board" type="button">Clear</button>
+            <label class="btn btn-ghost btn-sm teacher-only" id="bg-pick">Background…<input type="file" id="bg-file" accept="image/*,application/pdf" hidden></label>
+            <span class="bg-pages teacher-only" id="bg-pages" hidden>
+              <button class="tool" id="bg-prev" type="button" aria-label="Previous page"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <span id="bg-page-label" class="small"></span>
+              <button class="tool" id="bg-next" type="button" aria-label="Next page"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+            </span>
+            <button class="btn btn-ghost btn-sm teacher-only" id="bg-remove" type="button" hidden>Remove background</button>
             <button class="btn btn-ghost btn-sm" id="board-big" type="button">Show big</button>
             <button class="btn btn-ghost btn-sm" id="board-save" type="button">Save as image</button>
           </div>
-          <div class="board-wrap" id="board-wrap"><canvas id="board"></canvas></div>
+          <div class="board-wrap" id="board-wrap">
+            <div class="board-stack" id="board-stack">
+              <canvas id="board-bg"></canvas>
+              <canvas id="board"></canvas>
+              <canvas id="board-fx"></canvas>
+              <input id="board-text" class="board-text" maxlength="200" autocomplete="off" aria-label="Text to write on the whiteboard" hidden>
+            </div>
+          </div>
           <p class="muted small" id="board-note" hidden>Only the teacher can draw right now.</p>
         </div>
       </aside>
+    </div>
+
+    <div class="lobby-wait" id="lobby-wait" hidden>
+      <div class="lobby-card" role="status" aria-live="polite">
+        <span class="lobby-emoji" aria-hidden="true">🚪</span>
+        <h2>You're in the waiting room</h2>
+        <p class="muted">Your teacher will let you in soon.</p>
+        <button class="btn btn-ghost" id="lobby-leave" type="button">Leave</button>
+      </div>
     </div>
 
     <footer class="dock" aria-label="Class controls">
@@ -262,7 +308,7 @@
   <!-- ========== NEW COURSE ========== -->
   <dialog id="dlg-course" class="dialog">
     <form id="course-form" class="stack">
-      <h2>Plan a class</h2>
+      <h2 id="course-dlg-title">Plan a class</h2>
       <label class="field"><span>Title</span><input name="title" required maxlength="80" placeholder="e.g. Fractions with pizza"></label>
       <div class="row">
         <label class="field"><span>Subject</span>
@@ -279,7 +325,7 @@
         <label class="field"><span>Ends</span><input type="time" name="end" required value="09:45"></label>
       </div>
       <div class="row">
-        <label class="field"><span>Repeat every week for</span>
+        <label class="field" id="repeat-field"><span>Repeat every week for</span>
           <select name="repeatWeeks">
             <option value="1">Just once</option><option value="4">4 weeks</option><option value="8">8 weeks</option><option value="12">12 weeks</option><option value="36">The whole school year</option>
           </select>
@@ -295,10 +341,11 @@
         </fieldset>
       </div>
       <label class="field"><span>What to bring (optional)</span><textarea name="notes" rows="2" maxlength="500" placeholder="e.g. A pencil, coloured paper and scissors"></textarea></label>
+      <label class="check"><input type="checkbox" name="waitingRoom"> Students wait until I let them in</label>
       <p class="form-error" id="course-error" role="alert"></p>
       <div class="row end">
         <button class="btn btn-ghost" type="button" data-close>Cancel</button>
-        <button class="btn btn-primary" type="submit">Add to calendar</button>
+        <button class="btn btn-primary" type="submit" id="course-submit">Add to calendar</button>
       </div>
     </form>
   </dialog>
