@@ -82,7 +82,7 @@
     socket = io({ transports: ['websocket', 'polling'] });
     socket.on('connect', () => {
       socket.emit('join', { room: code, name: C.profile.name, token: C.profile.token }, (res) => {
-        if (res.error) { C.toast(res.error); R.leave(); return; }
+        if (res.error) { C.toast(tr(res.error, { n: res.n })); R.leave(); return; }
         C.rememberRoom(code);
         if (res.inLobby) { $('#lobby-wait').hidden = false; return; }
         entered(res);
@@ -90,7 +90,7 @@
     });
 
     function entered(res) {
-      if (res.error) { C.toast(res.error); R.leave(); return; }
+      if (res.error) { C.toast(tr(res.error, { n: res.n })); R.leave(); return; }
       $('#lobby-wait').hidden = true;
       myId = res.id; myRole = res.role;
       document.body.classList.toggle('is-teacher', myRole === 'teacher');
@@ -102,7 +102,11 @@
       setPoll(res.poll, true);
       applyBreakout(res.breakout);
       renderLobby(res.lobby || []);
-      res.peers.forEach((p) => { createPeer(p.id, p); call(p.id); });
+      media = res.media === 'livekit' ? 'livekit' : 'mesh';
+      res.peers.forEach((p) => { createPeer(p.id, p); if (media === 'mesh') call(p.id); });
+      if (media === 'livekit') {
+        lkConnect(res.lk).catch((err) => { console.warn('LiveKit', err); C.toast('Could not connect the video. Check your connection, then leave and join again.'); });
+      }
       joinedAt = Date.now();
       clockTimer = setInterval(tickClock, 1000); tickClock();
       speakTimer = setInterval(detectSpeaking, 250);
@@ -116,6 +120,7 @@
     socket.on('board-remove', removeStroke);
     socket.on('poll', (p) => setPoll(p));
     socket.on('breakout', applyBreakout);
+    socket.on('lk-token', (d) => { if (media === 'livekit') lkSwitch(d); });
     socket.on('files-changed', ({ name }) => {
       C.refreshFiles(code);
       if (name && myRole !== 'teacher') C.toast(tr('The teacher shared {name}. Open Files to see it.', { name }));
@@ -148,21 +153,27 @@
   }
 
   // ---------- peers ----------
+  // show a newly arrived camera/microphone track on someone's tile
+  function addRemoteTrack(p, track) {
+    if (!p.stream.getTracks().includes(track)) p.stream.addTrack(track);
+    const v = p.tile?.querySelector('video');
+    if (v) { v.srcObject = null; v.srcObject = p.stream; }
+    if (track.kind === 'audio') attachAnalyser(p);
+    updateSpotlight();
+  }
+
   function createPeer(id, info) {
     if (peers.has(id)) return peers.get(id);
-    const pc = new RTCPeerConnection(ICE);
+    // with LiveKit, media comes from the LiveKit room instead of a direct connection
+    const pc = media === 'mesh' ? new RTCPeerConnection(ICE) : null;
     const stream = new MediaStream();
     const p = { pc, stream, info, pending: [] };
     peers.set(id, p);
-    pc.onicecandidate = (e) => e.candidate && socket.emit('signal', { to: id, data: { candidate: e.candidate } });
-    pc.ontrack = (e) => {
-      stream.addTrack(e.track);
-      const v = p.tile?.querySelector('video');
-      if (v) { v.srcObject = null; v.srcObject = stream; }
-      if (e.track.kind === 'audio') attachAnalyser(p);
-      updateSpotlight();
-    };
-    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') pc.restartIce?.(); };
+    if (pc) {
+      pc.onicecandidate = (e) => e.candidate && socket.emit('signal', { to: id, data: { candidate: e.candidate } });
+      pc.ontrack = (e) => addRemoteTrack(p, e.track);
+      pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') pc.restartIce?.(); };
+    }
     addTile(id, info, stream, false);
     applyVisibility(id);
     return p;
@@ -177,6 +188,7 @@
   }
 
   async function onSignal({ from, data }) {
+    if (media !== 'mesh') return;
     const p = peers.get(from) || createPeer(from, { name: 'Guest', role: 'student' });
     const pc = p.pc;
     try {
@@ -200,11 +212,76 @@
   function removePeer(id) {
     const p = peers.get(id);
     if (!p) return;
-    p.pc.close();
+    p.pc?.close();
     p.tile?.remove();
     peers.delete(id);
     if (pinnedId === id) pinnedId = null;
     updateSpotlight(); renderPeople(); layoutTiles();
+  }
+
+  // ---------- LiveKit (optional media server for bigger classes) ----------
+  // The server says which to use when you join: 'mesh' (direct connections) or 'livekit'.
+  // With LiveKit you send your camera and voice once, to the LiveKit room for your group.
+  let media = 'mesh', lk = null, lkVideoPub = null, lkLoad = null;
+  function loadLiveKit() {
+    lkLoad = lkLoad || new Promise((resolve, reject) => {
+      if (window.LivekitClient) return resolve(window.LivekitClient);
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/livekit-client@2.22.4/dist/livekit-client.umd.js';
+      s.integrity = 'sha384-5qI/UmLG0CvuWCt6vqjMW1oRwzXu+MNhbw4x6yo9NARdlqi94LwQfq9wvDTIcfrD';
+      s.crossOrigin = 'anonymous';
+      s.onload = () => (window.LivekitClient ? resolve(window.LivekitClient) : reject(new Error('LiveKit did not load')));
+      s.onerror = () => { lkLoad = null; reject(new Error('LiveKit did not load')); };
+      document.head.append(s);
+    });
+    return lkLoad;
+  }
+  async function lkConnect({ url, token }) {
+    const L = await loadLiveKit();
+    // keep our own camera/microphone alive when LiveKit unpublishes them (we switch rooms for groups)
+    const room = new L.Room({ adaptiveStream: true, dynacast: true, stopLocalTrackOnUnpublish: false });
+    lk = room;
+    room.on(L.RoomEvent.TrackSubscribed, (track, pub, part) => {
+      if (lk !== room) return;
+      const p = peers.get(part.identity) || createPeer(part.identity, { name: part.name || 'Guest', role: 'student' });
+      addRemoteTrack(p, track.mediaStreamTrack);
+    });
+    room.on(L.RoomEvent.TrackUnsubscribed, (track, pub, part) => {
+      const p = peers.get(part.identity);
+      if (p) { p.stream.removeTrack(track.mediaStreamTrack); updateSpotlight(); }
+    });
+    room.on(L.RoomEvent.Disconnected, () => {
+      if (lk === room && R.active) sys(tr('The video connection was lost. Leave and join again if you cannot see or hear the class.'));
+    });
+    await room.connect(url, token);
+    if (lk !== room) { room.disconnect(false); return; } // left or switched groups while connecting
+    if (audioTrack()) await room.localParticipant.publishTrack(audioTrack(), { source: L.Track.Source.Microphone });
+    lkVideoPub = null;
+    await lkSyncVideo();
+  }
+  // publish whatever we show (camera or shared screen), or nothing
+  async function lkSyncVideo() {
+    const room = lk, L = window.LivekitClient;
+    if (!room || !L || room.state !== 'connected') return;
+    const v = outVideo();
+    try {
+      if (lkVideoPub && v) await lkVideoPub.track.replaceTrack(v, true);
+      else if (!lkVideoPub && v) lkVideoPub = await room.localParticipant.publishTrack(v, { source: L.Track.Source.Camera, simulcast: true });
+      else if (lkVideoPub && !v) { await room.localParticipant.unpublishTrack(lkVideoPub.track, false); lkVideoPub = null; }
+    } catch (err) { console.warn('LiveKit video', err); }
+  }
+  // breakout groups: move to the LiveKit room of our new group (the server sends a token for it)
+  async function lkSwitch(data) {
+    lkLeave();
+    peers.forEach((p) => { p.stream.getTracks().forEach((t) => p.stream.removeTrack(t)); });
+    updateSpotlight();
+    try { await lkConnect(data); }
+    catch (err) { console.warn('LiveKit', err); C.toast('Could not connect the video. Check your connection, then leave and join again.'); }
+  }
+  function lkLeave() {
+    const room = lk;
+    lk = null; lkVideoPub = null;
+    room?.disconnect(false); // false: do not stop our camera and microphone
   }
 
   // ---------- breakout groups ----------
@@ -219,6 +296,7 @@
     return kind === 'audio' ? audioTrack() : outVideo();
   }
   function syncSenders() {
+    if (media === 'livekit') return lkSyncVideo(); // groups are separate LiveKit rooms; only camera vs screen changes here
     return Promise.all([...peers].map(([id, p]) => {
       const [ta, tv] = p.pc.getTransceivers();
       return Promise.all([
@@ -1077,6 +1155,7 @@
     if (!R.active && !silent) { location.hash = '#/today'; return; }
     R.active = false;
     stopRecording();
+    lkLeave();
     $('#rec-pill').hidden = true;
     clearInterval(clockTimer); clearInterval(speakTimer);
     peers.forEach((_, id) => removePeer(id));

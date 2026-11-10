@@ -28,6 +28,44 @@ if (process.env.TURN_URLS) {
   });
 }
 
+// ---------- optional LiveKit media server (for bigger classes) ----------
+// Without it, browsers send video to each other directly (a mesh, fine up to ~16 people).
+// With LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET set, video goes through LiveKit.
+const LK = process.env.LIVEKIT_URL && process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET ? {
+  url: process.env.LIVEKIT_URL.trim().replace(/\/+$/, ''),
+  key: process.env.LIVEKIT_API_KEY.trim(),
+  secret: process.env.LIVEKIT_API_SECRET.trim(),
+} : null;
+const MAX_PEOPLE = LK ? Math.min(Math.max(parseInt(process.env.MAX_CLASS_SIZE, 10) || 50, 2), 200) : 16;
+
+// LiveKit access tokens are JWTs signed with the API secret (HS256).
+function lkJwt(claims, ttlSeconds) {
+  const now = Math.floor(Date.now() / 1000);
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const data = `${enc({ alg: 'HS256', typ: 'JWT' })}.${enc({ iss: LK.key, nbf: now - 10, exp: now + ttlSeconds, ...claims })}`;
+  return `${data}.${crypto.createHmac('sha256', LK.secret).update(data).digest('base64url')}`;
+}
+// One LiveKit room per class, and one per breakout group, so groups really cannot hear each other.
+const lkRoomName = (roomId, group) => (group === null ? roomId : `${roomId}.g${group + 1}`);
+const lkJoinToken = (lkRoom, identity, name) => lkJwt({
+  sub: identity, name,
+  video: { room: lkRoom, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: false },
+}, 6 * 3600);
+// Server-side calls (remove someone, close a room). Best effort: the class goes on if LiveKit is unreachable.
+async function lkApi(method, body, grant) {
+  try {
+    const res = await fetch(`${LK.url.replace(/^ws/, 'http')}/twirp/livekit.RoomService/${method}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${lkJwt({ video: grant }, 60)}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+const lkKick = (lkRoom, identity) => LK && lkApi('RemoveParticipant', { room: lkRoom, identity }, { roomAdmin: true, room: lkRoom });
+const lkClose = (lkRoom) => LK && lkApi('DeleteRoom', { room: lkRoom }, { roomCreate: true });
+
 // ---------- database (SQLite) ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const sql = new DatabaseSync(path.join(DATA_DIR, 'cartable.db'));
@@ -961,6 +999,18 @@ function sendPoll(r, roomId, teachersOnly) {
 const groupOf = (r, id) => (r.groups ? (r.groups.has(id) ? r.groups.get(id) : null) : null);
 const breakoutView = (r) => (r.groups ? { active: true, count: r.groupCount, groups: Object.fromEntries(r.groups) } : { active: false });
 const sendBreakout = (r, roomId) => io.to(roomId).emit('breakout', breakoutView(r));
+// With LiveKit, a group is its own LiveKit room. When people change group, give each of them a
+// token for their new room only, and remove them from the old one.
+const lkSnapshot = (r, roomId) => new Map([...r.peers.keys()].map((id) => [id, lkRoomName(roomId, groupOf(r, id))]));
+function lkRegroup(r, roomId, before) {
+  if (!LK) return;
+  for (const [id, p] of r.peers) {
+    const now = lkRoomName(roomId, groupOf(r, id));
+    if (before.get(id) === now) continue;
+    io.to(id).emit('lk-token', { url: LK.url, token: lkJoinToken(now, id, p.name) });
+    if (before.has(id)) lkKick(before.get(id), id);
+  }
+}
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 function sendLobby(r) {
   const list = lobbyList(r);
@@ -1035,7 +1085,7 @@ io.on('connection', (socket) => {
 
     // Put this person in the class. Returns the welcome message, or an error if the class is full.
     const enter = () => {
-      if (r.peers.size >= 16) return { error: 'This class is full (16 people max).' };
+      if (r.peers.size >= MAX_PEOPLE) return { error: 'This class is full ({n} people max).', n: MAX_PEOPLE };
       me = { name: myName, role: teacher ? 'teacher' : 'student', verified: teacher || !!pupil, hand: false, mic: true, cam: true };
       socket.join(room);
       const others = peerList(r);
@@ -1046,6 +1096,9 @@ io.on('connection', (socket) => {
         ok: true, id: socket.id, role: me.role, name: me.name, peers: others, strokes: r.strokes.map((x) => x.s),
         ...flags(r), recording: !!r.recording, bg: r.bg ? r.bg.v : 0, lobby: teacher ? lobbyList(r) : [],
         poll: pollView(r, teacher), breakout: breakoutView(r),
+        // newcomers start in the main room, so their LiveKit token is for it
+        media: LK ? 'livekit' : 'mesh',
+        ...(LK ? { lk: { url: LK.url, token: lkJoinToken(lkRoomName(room, null), socket.id, me.name) } } : {}),
       };
     };
 
@@ -1170,8 +1223,18 @@ io.on('connection', (socket) => {
       case 'mute-all': socket.to(roomId).emit('force-mute'); break;
       case 'mute': if (has) io.to(target).emit('force-mute'); break;
       case 'lower-hand': if (has) io.to(target).emit('force-lower-hand'); break;
-      case 'remove': if (has) { io.to(target).emit('removed'); io.sockets.sockets.get(target)?.disconnect(true); } break;
-      case 'end': io.to(roomId).emit('ended'); [...r.lobby.keys()].forEach((id) => io.to(id).emit('ended')); break;
+      case 'remove':
+        if (has) {
+          lkKick(lkRoomName(roomId, groupOf(r, target)), target); // also cut their video, not just the app
+          io.to(target).emit('removed');
+          io.sockets.sockets.get(target)?.disconnect(true);
+        }
+        break;
+      case 'end':
+        io.to(roomId).emit('ended');
+        [...r.lobby.keys()].forEach((id) => io.to(id).emit('ended'));
+        if (LK) [null, ...Array.from({ length: 8 }, (_, i) => i)].forEach((g) => lkClose(lkRoomName(roomId, g)));
+        break;
       case 'record-start': r.recording = socket.id; io.to(roomId).emit('recording', { on: true, name: me.name }); break;
       case 'record-stop': if (r.recording) { r.recording = null; io.to(roomId).emit('recording', { on: false }); } break;
 
@@ -1191,24 +1254,35 @@ io.on('connection', (socket) => {
       case 'breakout-start': {
         const count = Number(msg.count);
         if (!Number.isInteger(count) || count < 2 || count > 8 || !isObj(msg.assign)) return;
+        const before = lkSnapshot(r, roomId);
         r.groups = new Map();
         r.groupCount = count;
         for (const [id, g] of Object.entries(msg.assign)) {
           if (r.peers.has(id) && Number.isInteger(g) && g >= 0 && g < count) r.groups.set(id, g);
         }
         sendBreakout(r, roomId);
+        lkRegroup(r, roomId, before);
         break;
       }
       case 'breakout-move': {
         const g = msg.group;
         if (!r.groups || typeof target !== 'string' || !r.peers.has(target)) return;
+        const before = lkSnapshot(r, roomId);
         if (g === null) r.groups.delete(target);
         else if (Number.isInteger(g) && g >= 0 && g < r.groupCount) r.groups.set(target, g);
         else return;
         sendBreakout(r, roomId);
+        lkRegroup(r, roomId, before);
         break;
       }
-      case 'breakout-end': if (r.groups) { r.groups = null; sendBreakout(r, roomId); } break;
+      case 'breakout-end':
+        if (r.groups) {
+          const before = lkSnapshot(r, roomId);
+          r.groups = null;
+          sendBreakout(r, roomId);
+          lkRegroup(r, roomId, before);
+        }
+        break;
     }
   });
 
@@ -1217,6 +1291,7 @@ io.on('connection', (socket) => {
     const r = rooms.get(roomId);
     if (!r) return;
     if (r.lobby.delete(socket.id)) sendLobby(r);
+    if (r.peers.has(socket.id)) lkKick(lkRoomName(roomId, groupOf(r, socket.id)), socket.id);
     if (r.peers.delete(socket.id)) {
       if (r.recording === socket.id) { r.recording = null; socket.to(roomId).emit('recording', { on: false }); }
       if (r.groups && r.groups.delete(socket.id)) sendBreakout(r, roomId);
@@ -1227,7 +1302,9 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Cartable is running on http://localhost:${PORT}`);
+  // the real port (PORT=0 picks a free one, which the tests use)
+  console.log(`Cartable is running on http://localhost:${server.address().port}`);
+  console.log(LK ? `Video goes through LiveKit at ${LK.url} (up to ${MAX_PEOPLE} people per class).` : 'Video goes directly between browsers (up to 16 people per class).');
   if (SCHOOL_CODE === 'teach') {
     if (PROD) console.warn('WARNING: TEACHER_CODE is not set, so new teacher accounts are turned off. Set a secret TEACHER_CODE.');
     else console.log('School code is "teach" (needed to create teacher accounts). Set TEACHER_CODE to change it.');
