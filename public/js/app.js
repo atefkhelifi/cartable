@@ -157,6 +157,7 @@
       return;
     }
     $('#view-welcome').hidden = true;
+    syncRemindButton();
     document.body.classList.toggle('is-teacher', isTeacher());
     $('#me-chip').innerHTML = `${C.avatar(C.profile.name)}<div><b>${esc(C.profile.name)}</b><small>${t(isTeacher() ? 'Teacher' : 'Student')}</small></div>`;
 
@@ -294,7 +295,8 @@
           <div class="acts">
             ${C.status(c) !== 'done' ? joinButton(c) : ''}
             <button class="btn btn-ghost btn-sm" data-copy="${esc(c.room)}" type="button">${t('Copy link')}</button>
-            ${isTeacher() ? `<button class="btn btn-ghost btn-sm" data-del="${esc(c.id)}" type="button">${t('Delete')}</button>` : ''}
+            ${isTeacher() ? `<button class="btn btn-ghost btn-sm" data-edit="${esc(c.id)}" type="button">${t('Edit')}</button>
+            <button class="btn btn-ghost btn-sm" data-del="${esc(c.id)}" type="button">${t('Delete')}</button>` : ''}
           </div>
         </li>`).join('')}</ul>` : isTeacher() ? `<button class="btn btn-ghost" id="day-plan" type="button">${t('Plan a class on this day')}</button>` : ''}`;
   }
@@ -315,6 +317,8 @@
     const copy = e.target.closest('[data-copy]');
     if (copy) { await navigator.clipboard?.writeText(C.inviteLink(copy.dataset.copy)).catch(() => {}); C.toast('Invite link copied'); }
     if (e.target.id === 'day-plan') openCourseDialog(selected);
+    const edit = e.target.closest('[data-edit]');
+    if (edit) openCourseDialog(null, C.courses.find((x) => x.id === edit.dataset.edit));
     const del = e.target.closest('[data-del]');
     if (del) {
       const c = C.courses.find((x) => x.id === del.dataset.del);
@@ -327,10 +331,21 @@
 
   // ---------- course dialog ----------
   const dlgCourse = $('#dlg-course');
-  function openCourseDialog(date) {
+  let editing = null; // the class being edited, or null when planning a new one
+  function openCourseDialog(date, course) {
     const f = $('#course-form');
     f.reset();
-    f.date.value = date || ymd(new Date());
+    editing = course || null;
+    if (editing) {
+      for (const k of ['title', 'subject', 'group', 'date', 'start', 'end', 'notes']) f[k].value = editing[k] || '';
+      f.querySelector(`input[name="color"][value="${editing.color}"]`)?.click();
+      f.waitingRoom.checked = !!editing.waitingRoom;
+    } else {
+      f.date.value = date || ymd(new Date());
+    }
+    $('#repeat-field').hidden = !!editing;
+    $('#course-dlg-title').textContent = t(editing ? 'Edit class' : 'Plan a class');
+    $('#course-submit').textContent = t(editing ? 'Save changes' : 'Add to calendar');
     $('#course-error').textContent = '';
     dlgCourse.showModal();
     f.title.focus();
@@ -339,11 +354,21 @@
   $('#course-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));
-    body.teacher = C.profile.name;
+    body.waitingRoom = e.target.waitingRoom.checked;
     try {
-      const created = await C.api('/api/courses', { method: 'POST', body: JSON.stringify(body) });
-      dlgCourse.close();
-      C.toast(created.length > 1 ? t('Added {n} weekly classes', { n: created.length }) : 'Class added to the calendar');
+      if (editing) {
+        // A new date only applies to this day; otherwise ask about the other weeks.
+        const weeks = C.courses.filter((x) => x.series === editing.series).length;
+        const all = weeks > 1 && body.date === editing.date && confirm(t('Change every week of this class?\n\nOK: change all weeks\nCancel: change only this day'));
+        await C.api(`/api/courses/${editing.id}${all ? '?series=1' : ''}`, { method: 'PATCH', body: JSON.stringify(body) });
+        dlgCourse.close();
+        C.toast('Class updated');
+      } else {
+        const created = await C.api('/api/courses', { method: 'POST', body: JSON.stringify(body) });
+        dlgCourse.close();
+        C.toast(created.length > 1 ? t('Added {n} weekly classes', { n: created.length }) : 'Class added to the calendar');
+      }
+      editing = null;
       selected = body.date;
       calMonth = new Date(body.date + 'T00:00:00'); calMonth.setDate(1);
       await loadCourses();
@@ -389,6 +414,39 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
+
+  // ---------- class reminders (browser notifications while Cartable is open) ----------
+  const REMIND_MIN = 5;
+  const reminded = new Set(store.get('cartable.reminded') || []);
+  const remindOn = () => store.get('cartable.remind') === true && 'Notification' in window && Notification.permission === 'granted';
+  const syncRemindButton = () => $('#btn-remind').setAttribute('aria-pressed', String(remindOn()));
+  $('#btn-remind').addEventListener('click', async () => {
+    if (!('Notification' in window)) return C.toast('This browser cannot show notifications.');
+    if (remindOn()) { store.set('cartable.remind', false); syncRemindButton(); return C.toast('Class reminders are off.'); }
+    const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+    if (p !== 'granted') return C.toast('Notifications are blocked. Allow them for this site in your browser settings.');
+    store.set('cartable.remind', true);
+    syncRemindButton();
+    C.toast(t('You will get a reminder {n} minutes before each class while Cartable is open.', { n: REMIND_MIN }));
+  });
+  let coursesLoadedAt = Date.now();
+  async function checkReminders() {
+    syncRemindButton();
+    if (!C.profile || !remindOn() || window.Room?.active) return;
+    if (Date.now() - coursesLoadedAt > 5 * 60e3) { coursesLoadedAt = Date.now(); await loadCourses(); }
+    const now = Date.now();
+    for (const c of C.courses) {
+      const ms = at(c, c.start) - now;
+      if (ms <= 0 || ms > REMIND_MIN * 60e3 || reminded.has(c.id)) continue;
+      reminded.add(c.id);
+      store.set('cartable.reminded', [...reminded].slice(-200));
+      const n = new Notification(t('{title} starts in {n} min', { title: c.title, n: Math.max(1, Math.round(ms / 60e3)) }), {
+        body: t(isTeacher() ? 'Click to open the class.' : 'Click to join the class.'), tag: `cartable-${c.id}`,
+      });
+      n.onclick = () => { window.focus(); location.hash = `#/room/${c.room}`; n.close(); };
+    }
+  }
+  setInterval(checkReminders, 30e3);
 
   // re-render dynamic views when the language changes
   window.addEventListener('languagechange-app', () => { if (C.profile && !window.Room?.active) route(); });

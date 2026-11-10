@@ -83,22 +83,35 @@
     socket.on('connect', () => {
       socket.emit('join', { room: code, name: C.profile.name, token: C.profile.token }, (res) => {
         if (res.error) { C.toast(res.error); R.leave(); return; }
-        myId = res.id; myRole = res.role;
         C.rememberRoom(code);
-        document.body.classList.toggle('is-teacher', myRole === 'teacher');
-        addTile('me', { name: C.profile.name, role: myRole, mic: micOn, cam: camOn, hand: false }, camStream, true);
-        sendState();
-        applyFlags(res);
-        setRecording(res.recording, null, true);
-        res.strokes.forEach(drawStroke);
-        res.peers.forEach((p) => { createPeer(p.id, p); call(p.id); });
-        joinedAt = Date.now();
-        clockTimer = setInterval(tickClock, 1000); tickClock();
-        speakTimer = setInterval(detectSpeaking, 250);
-        sys(tr('You joined the class.'));
-        renderPeople();
+        if (res.inLobby) { $('#lobby-wait').hidden = false; return; }
+        entered(res);
       });
     });
+
+    function entered(res) {
+      if (res.error) { C.toast(res.error); R.leave(); return; }
+      $('#lobby-wait').hidden = true;
+      myId = res.id; myRole = res.role;
+      document.body.classList.toggle('is-teacher', myRole === 'teacher');
+      addTile('me', { name: res.name || C.profile.name, role: myRole, mic: micOn, cam: camOn, hand: false }, camStream, true);
+      sendState();
+      applyFlags(res);
+      setRecording(res.recording, null, true);
+      loadBoard(res.strokes, res.bg);
+      renderLobby(res.lobby || []);
+      res.peers.forEach((p) => { createPeer(p.id, p); call(p.id); });
+      joinedAt = Date.now();
+      clockTimer = setInterval(tickClock, 1000); tickClock();
+      speakTimer = setInterval(detectSpeaking, 250);
+      sys(tr('You joined the class.'));
+      renderPeople();
+    }
+    socket.on('admitted', entered);
+    socket.on('denied', () => { C.toast("The teacher didn't let you in this time."); R.leave(); });
+    socket.on('lobby', (list) => renderLobby(list, true));
+    socket.on('board-bg', ({ v }) => showBackground(v));
+    socket.on('board-remove', removeStroke);
 
     socket.on('peer-joined', (p) => { createPeer(p.id, p); sys(tr('{name} joined.', { name: p.name })); renderPeople(); });
     socket.on('peer-left', ({ id }) => { const p = peers.get(id); if (p) sys(tr('{name} left.', { name: p.info.name })); removePeer(id); });
@@ -115,7 +128,7 @@
     socket.on('signal', onSignal);
     socket.on('chat', onChat);
     socket.on('react', ({ name, emoji }) => floatReaction(emoji, name));
-    socket.on('draw', drawStroke);
+    socket.on('draw', addStroke);
     socket.on('clear-board', clearBoard);
     socket.on('room-flags', applyFlags);
     socket.on('recording', ({ on, name }) => setRecording(on, name));
@@ -234,14 +247,14 @@
     const spot = $('#spotlight');
     if (target === spotId && target !== null && target !== 'board' && spot.querySelector('video')?.srcObject) return;
     // return the board if it was out on the stage
-    if (target !== 'board' && spot.contains($('#board'))) $('#board-wrap').append($('#board'));
+    if (target !== 'board' && spot.contains($('#board-stack'))) $('#board-wrap').append($('#board-stack'));
     spotId = target;
     $('#stage').classList.toggle('has-spot', !!target);
     spot.hidden = !target;
     if (!target) { spot.innerHTML = ''; return; }
     if (target === 'board') {
       spot.innerHTML = '';
-      spot.append($('#board'));
+      spot.append($('#board-stack'));
       $('#board-big').textContent = tr('Back to panel');
       return;
     }
@@ -335,7 +348,14 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    if (!R.active || e.target.closest('input, textarea, select')) return;
+    if (!R.active || !myId || e.target.closest('input, textarea, select')) return;
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 'z' || k === 'y')) {
+      e.preventDefault();
+      if (k === 'y' || e.shiftKey) redo(); else undo();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts such as Ctrl+V alone
     if (e.key === 'm') toggleMic();
     if (e.key === 'v') toggleCam();
     if (e.key === 'h') toggleHand();
@@ -487,8 +507,35 @@
     socket.emit('teacher', { action: a });
     if (a === 'mute-all') C.toast('Everyone is muted');
   }));
+  // waiting room (teacher view)
+  let lobbyCount = 0;
+  function renderLobby(list, notify) {
+    if (myRole !== 'teacher') return;
+    const fresh = list.length > lobbyCount;
+    lobbyCount = list.length;
+    $('#lobby').hidden = !list.length;
+    $('#lobby-badge').hidden = !list.length;
+    $('#lobby-badge').textContent = list.length;
+    $('#lobby-list').innerHTML = list.map((p) => `
+      <li>
+        ${C.avatar(p.name)}
+        <div class="nm"><b>${esc(p.name)}</b></div>
+        <div class="acts">
+          <button data-a="admit" data-id="${esc(p.id)}">${tr('Let in')}</button>
+          <button data-a="deny" data-id="${esc(p.id)}">${tr('Turn away')}</button>
+        </div>
+      </li>`).join('');
+    if (notify && fresh) C.toast(tr('{name} is waiting to join', { name: list[list.length - 1].name }));
+  }
+  $('#lobby-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    socket.emit('teacher', { action: b.dataset.a, target: b.dataset.id });
+  });
+  $('#lobby-leave').addEventListener('click', () => R.leave());
+
   function applyFlags(f) {
     boardLocked = !!f.boardLocked; roomLocked = !!f.locked;
+    $('#t-waiting').textContent = tr(f.waiting ? 'Turn off waiting room' : 'Turn on waiting room');
     $('#room-lock-pill').hidden = !roomLocked;
     $('#t-lock').textContent = tr(roomLocked ? 'Unlock class' : 'Lock class');
     $('#t-lock-board').textContent = tr(boardLocked ? 'Let everyone draw' : 'Only I can draw');
@@ -496,69 +543,297 @@
   }
 
   // ---------- whiteboard ----------
-  let ctx, color = '#1B2A4A', drawing = null, boardReady = false;
+  // Every item has an id. A pen stroke is sent in several pieces that share one id,
+  // so undo can remove the whole stroke. Three layers: background, drawing, live preview.
+  let ctx, fx, bgx, color = '#1B2A4A', tool = 'pen', boardReady = false;
+  let items = [];        // everything on the board, in drawing order
+  let undoIds = [];      // ids of my own items, newest last
+  let redoStack = [];    // my undone items, each an array of pieces
+  let drawing = null, shape = null, textAt = null;
+  const newStrokeId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  const canDraw = () => !(boardLocked && myRole !== 'teacher');
+  const textSize = () => Math.round(+$('#brush').value * 4 + 12);
+
+  function paint(g, s) {
+    if (!g || !s?.pts?.length) return;
+    g.save();
+    g.globalCompositeOperation = s.e ? 'destination-out' : 'source-over';
+    g.strokeStyle = g.fillStyle = s.c || '#000';
+    g.lineWidth = s.w || 4;
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const [a, b] = s.pts;
+    g.beginPath();
+    if (s.k === 'text') {
+      g.direction = 'ltr'; g.textAlign = 'left'; g.textBaseline = 'top';
+      g.font = `700 ${s.s}px "Atkinson Hyperlegible", sans-serif`;
+      g.fillText(s.txt, a[0], a[1]);
+    } else if (s.k === 'line' || s.k === 'arrow') {
+      g.moveTo(...a); g.lineTo(...b);
+      if (s.k === 'arrow') {
+        const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), len = Math.max(14, s.w * 3.5);
+        for (const d of [-0.5, 0.5]) { g.moveTo(...b); g.lineTo(b[0] - len * Math.cos(ang + d), b[1] - len * Math.sin(ang + d)); }
+      }
+      g.stroke();
+    } else if (s.k === 'rect') {
+      g.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+    } else if (s.k === 'ellipse') {
+      g.ellipse((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.abs(b[0] - a[0]) / 2, Math.abs(b[1] - a[1]) / 2, 0, 0, Math.PI * 2);
+      g.stroke();
+    } else {
+      g.moveTo(...a);
+      s.pts.slice(1).forEach((p) => g.lineTo(...p));
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  function redraw() { if (!ctx) return; ctx.clearRect(0, 0, BOARD_W, BOARD_H); items.forEach((s) => paint(ctx, s)); }
+  function addStroke(s) { items.push(s); paint(ctx, s); }
+  function removeStroke(id) { const n = items.length; items = items.filter((s) => s.id !== id); if (items.length !== n) redraw(); }
+  function updateHistory() { $('#board-undo').disabled = !undoIds.length; $('#board-redo').disabled = !redoStack.length; }
+  function clearBoard() { items = []; undoIds = []; redoStack = []; redraw(); updateHistory(); }
+  function loadBoard(strokes, bg) { clearBoard(); items = [...(strokes || [])]; redraw(); showBackground(bg); }
+
+  // a finished item of mine: show it, send it, remember it for undo
+  function commit(s) {
+    addStroke(s);
+    socket?.emit('draw', s);
+    undoIds.push(s.id); redoStack = []; updateHistory();
+  }
+
+  function undo() {
+    if (!canDraw()) return C.toast('Only the teacher can draw right now.');
+    const id = undoIds.pop(); if (!id) return;
+    const pieces = items.filter((s) => s.id === id);
+    removeStroke(id);
+    socket?.emit('undo', id);
+    if (pieces.length) redoStack.push(pieces);
+    updateHistory();
+  }
+  function redo() {
+    if (!canDraw()) return C.toast('Only the teacher can draw right now.');
+    const pieces = redoStack.pop(); if (!pieces) return;
+    // join the pieces of a pen stroke back together (at most 1000 points each)
+    let out = pieces;
+    if (!pieces[0].k) {
+      const pts = pieces.flatMap((p, i) => (i ? p.pts.slice(1) : p.pts));
+      out = [];
+      for (let i = 0; i < pts.length; i += 999) out.push({ ...pieces[0], pts: pts.slice(Math.max(0, i - 1), i + 999) });
+    }
+    out.forEach((s) => { addStroke(s); socket?.emit('draw', s); });
+    undoIds.push(pieces[0].id);
+    updateHistory();
+  }
+
+  function setTool(t) {
+    if (t !== 'text') commitText();
+    tool = t;
+    $$('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
+    $('#board-fx').classList.toggle('is-text', t === 'text');
+  }
+
+  // where the 1600×1000 board sits inside a canvas scaled with object-fit: contain
+  function boardBox() {
+    const r = $('#board-fx').getBoundingClientRect();
+    const scale = Math.min(r.width / BOARD_W, r.height / BOARD_H);
+    return { r, scale, ox: (r.width - BOARD_W * scale) / 2, oy: (r.height - BOARD_H * scale) / 2 };
+  }
+  const toBoard = (e) => {
+    const { r, scale, ox, oy } = boardBox();
+    return [Math.round((e.clientX - r.left - ox) / scale), Math.round((e.clientY - r.top - oy) / scale)];
+  };
+
+  function openText(p) {
+    const inp = $('#board-text');
+    const { r, scale, ox, oy } = boardBox();
+    const sr = $('#board-stack').getBoundingClientRect();
+    textAt = { p, size: textSize(), c: color };
+    inp.value = '';
+    inp.style.left = `${r.left - sr.left + ox + p[0] * scale}px`;
+    inp.style.top = `${r.top - sr.top + oy + p[1] * scale}px`;
+    inp.style.fontSize = `${Math.max(textAt.size * scale, 10)}px`;
+    inp.style.color = color;
+    inp.hidden = false;
+    setTimeout(() => inp.focus(), 0);
+  }
+  function commitText() {
+    const inp = $('#board-text');
+    if (inp.hidden) return;
+    inp.hidden = true;
+    const txt = inp.value.trim();
+    const at = textAt; textAt = null;
+    if (txt && at && canDraw()) commit({ id: newStrokeId(), k: 'text', c: at.c, s: at.size, pts: [at.p], txt: txt.slice(0, 200) });
+  }
+
   function setupBoard() {
-    const cv = $('#board');
-    cv.width = BOARD_W; cv.height = BOARD_H;
-    ctx = cv.getContext('2d');
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const cv = $('#board'), fxc = $('#board-fx'), bgc = $('#board-bg');
+    for (const c of [cv, fxc, bgc]) { c.width = BOARD_W; c.height = BOARD_H; }
+    ctx = cv.getContext('2d'); fx = fxc.getContext('2d'); bgx = bgc.getContext('2d');
     clearBoard();
+    showBackground(0);
     if (boardReady) return;
     boardReady = true;
-    $$('.sw').forEach((s) => { if (s.dataset.c !== 'eraser') s.style.background = s.dataset.c; s.addEventListener('click', () => { color = s.dataset.c; $$('.sw').forEach((x) => x.setAttribute('aria-pressed', String(x === s))); }); });
+    $$('.sw').forEach((s) => {
+      s.style.background = s.dataset.c;
+      s.addEventListener('click', () => {
+        color = s.dataset.c;
+        $$('.sw').forEach((x) => x.setAttribute('aria-pressed', String(x === s)));
+        if (tool === 'eraser') setTool('pen');
+      });
+    });
+    $$('[data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
+    $('#board-undo').addEventListener('click', undo);
+    $('#board-redo').addEventListener('click', redo);
     $('#board-big').addEventListener('click', () => { boardBig = !boardBig; pinnedId = null; updateSpotlight(); });
     $('#board-save').addEventListener('click', saveBoard);
+    $('#bg-file').addEventListener('change', onBackgroundFile);
+    $('#bg-prev').addEventListener('click', () => showPdfPage(pdfPage - 1));
+    $('#bg-next').addEventListener('click', () => showPdfPage(pdfPage + 1));
+    $('#bg-remove').addEventListener('click', removeBackground);
 
-    // map pointer to board coordinates (canvas uses object-fit: contain)
-    const toBoard = (e) => {
-      const r = cv.getBoundingClientRect();
-      const scale = Math.min(r.width / BOARD_W, r.height / BOARD_H);
-      const ox = (r.width - BOARD_W * scale) / 2, oy = (r.height - BOARD_H * scale) / 2;
-      return [Math.round((e.clientX - r.left - ox) / scale), Math.round((e.clientY - r.top - oy) / scale)];
-    };
+    const inp = $('#board-text');
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commitText(); }
+      if (e.key === 'Escape') { e.preventDefault(); inp.hidden = true; textAt = null; }
+    });
+    inp.addEventListener('blur', commitText);
+
     let flushTimer;
     const flush = () => {
       if (!drawing || drawing.pts.length < 2) return;
-      socket.emit('draw', drawing);
-      drawing = { ...drawing, pts: [drawing.pts[drawing.pts.length - 1]] };
+      const piece = { ...drawing, pts: drawing.pts.slice() };
+      items.push(piece); // already painted while drawing
+      socket?.emit('draw', piece);
+      drawing.pts = [drawing.pts[drawing.pts.length - 1]];
     };
-    cv.addEventListener('pointerdown', (e) => {
-      if (boardLocked && myRole !== 'teacher') return C.toast('Only the teacher can draw right now.');
-      cv.setPointerCapture(e.pointerId);
-      const w = +$('#brush').value;
-      drawing = color === 'eraser' ? { e: 1, w: w * 4, pts: [toBoard(e)] } : { c: color, w, pts: [toBoard(e)] };
-      flushTimer = setInterval(flush, 50);
+    fxc.addEventListener('pointerdown', (e) => {
+      if (!canDraw()) return C.toast('Only the teacher can draw right now.');
+      const p = toBoard(e);
+      if (tool === 'text') { e.preventDefault(); commitText(); openText(p); return; }
+      fxc.setPointerCapture(e.pointerId);
+      const w = +$('#brush').value, id = newStrokeId();
+      if (tool === 'pen' || tool === 'eraser') {
+        drawing = tool === 'eraser' ? { id, e: 1, w: w * 4, pts: [p] } : { id, c: color, w, pts: [p] };
+        undoIds.push(id); redoStack = []; updateHistory();
+        flushTimer = setInterval(flush, 50);
+      } else {
+        shape = { id, k: tool, c: color, w, pts: [p, p] };
+      }
     });
-    cv.addEventListener('pointermove', (e) => {
-      if (!drawing) return;
-      const pt = toBoard(e);
-      drawStroke({ ...drawing, pts: [drawing.pts[drawing.pts.length - 1], pt] });
-      drawing.pts.push(pt);
+    fxc.addEventListener('pointermove', (e) => {
+      if (drawing) {
+        const pt = toBoard(e);
+        paint(ctx, { ...drawing, pts: [drawing.pts[drawing.pts.length - 1], pt] });
+        drawing.pts.push(pt);
+        if (drawing.pts.length >= 900) flush();
+      } else if (shape) {
+        shape.pts[1] = toBoard(e);
+        fx.clearRect(0, 0, BOARD_W, BOARD_H);
+        paint(fx, shape);
+      }
     });
     const end = () => {
-      if (!drawing) return;
-      if (drawing.pts.length === 1) { drawing.pts.push([drawing.pts[0][0] + 0.1, drawing.pts[0][1]]); drawStroke(drawing); }
-      clearInterval(flushTimer); flush(); drawing = null;
+      if (drawing) {
+        if (drawing.pts.length === 1) { drawing.pts.push([drawing.pts[0][0] + 0.1, drawing.pts[0][1]]); paint(ctx, drawing); }
+        clearInterval(flushTimer); flush(); drawing = null;
+      }
+      if (shape) {
+        fx.clearRect(0, 0, BOARD_W, BOARD_H);
+        const [a, b] = shape.pts;
+        if (Math.hypot(b[0] - a[0], b[1] - a[1]) > 3) commit(shape);
+        shape = null;
+      }
     };
-    cv.addEventListener('pointerup', end);
-    cv.addEventListener('pointercancel', end);
+    fxc.addEventListener('pointerup', end);
+    fxc.addEventListener('pointercancel', end);
   }
-  function sizeBoard() { /* canvas keeps a fixed 1600×1000 surface; CSS scales it */ }
-  function drawStroke(s) {
-    if (!ctx || !s?.pts?.length) return;
-    ctx.save();
-    ctx.globalCompositeOperation = s.e ? 'destination-out' : 'source-over';
-    ctx.strokeStyle = s.c || '#000';
-    ctx.lineWidth = s.w;
-    ctx.beginPath();
-    ctx.moveTo(...s.pts[0]);
-    s.pts.slice(1).forEach((p) => ctx.lineTo(...p));
-    ctx.stroke();
-    ctx.restore();
-  }
-  function clearBoard() { ctx?.clearRect(0, 0, BOARD_W, BOARD_H); }
+  function sizeBoard() { /* canvases keep a fixed 1600×1000 surface; CSS scales them */ }
 
-  // Save the whiteboard as a PNG: white paper, the same light grid, then the drawing on top.
+  // ---------- whiteboard background (teacher: a picture or a PDF page) ----------
+  let bgVersion = 0, pdfDoc = null, pdfPage = 1, pdfjsPromise;
+  function showBackground(v) {
+    bgVersion = v || 0;
+    $('#bg-remove').hidden = !bgVersion;
+    if (!bgVersion) { pdfDoc = null; $('#bg-pages').hidden = true; bgx?.clearRect(0, 0, BOARD_W, BOARD_H); return; }
+    const img = new Image();
+    img.onload = () => { if (bgVersion === v && bgx) { bgx.clearRect(0, 0, BOARD_W, BOARD_H); bgx.drawImage(img, 0, 0, BOARD_W, BOARD_H); } };
+    img.src = `/api/rooms/${encodeURIComponent(code)}/background?v=${v}`;
+  }
+  function loadPdfJs() {
+    pdfjsPromise = pdfjsPromise || new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.integrity = 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e';
+      s.crossOrigin = 'anonymous';
+      s.onload = () => {
+        const lib = window.pdfjsLib;
+        if (!lib) return reject(new Error('pdf.js did not load'));
+        lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(lib);
+      };
+      s.onerror = () => { pdfjsPromise = null; reject(new Error('pdf.js did not load')); };
+      document.head.append(s);
+    });
+    return pdfjsPromise;
+  }
+  async function onBackgroundFile(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    C.toast('Preparing the background…');
+    try {
+      if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+        const pdfjs = await loadPdfJs();
+        pdfDoc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+        await showPdfPage(1);
+      } else {
+        pdfDoc = null; $('#bg-pages').hidden = true;
+        const bmp = await createImageBitmap(file);
+        await uploadBackground(bmp, bmp.width, bmp.height);
+        bmp.close?.();
+      }
+    } catch (err) {
+      console.warn(err);
+      C.toast('That file could not be opened. Try a picture or a PDF.');
+    }
+  }
+  async function showPdfPage(n) {
+    if (!pdfDoc || n < 1 || n > pdfDoc.numPages) return;
+    pdfPage = n;
+    const page = await pdfDoc.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: Math.min(BOARD_W / base.width, BOARD_H / base.height) });
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: g, viewport: vp }).promise;
+    $('#bg-pages').hidden = pdfDoc.numPages < 2;
+    $('#bg-page-label').textContent = tr('Page {n} of {total}', { n, total: pdfDoc.numPages });
+    $('#bg-prev').disabled = n <= 1;
+    $('#bg-next').disabled = n >= pdfDoc.numPages;
+    await uploadBackground(c, c.width, c.height);
+  }
+  async function uploadBackground(src, w, h) {
+    const c = document.createElement('canvas');
+    c.width = BOARD_W; c.height = BOARD_H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, BOARD_W, BOARD_H);
+    const s = Math.min(BOARD_W / w, BOARD_H / h);
+    g.drawImage(src, (BOARD_W - w * s) / 2, (BOARD_H - h * s) / 2, w * s, h * s);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+    if (!blob) throw new Error('Could not encode the background');
+    const res = await fetch(`/api/rooms/${encodeURIComponent(code)}/background`, {
+      method: 'PUT', headers: { 'content-type': 'image/jpeg', authorization: `Bearer ${C.profile.token}` }, body: blob,
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); C.toast(d.error || 'Something went wrong. Try again.'); }
+  }
+  async function removeBackground() {
+    pdfDoc = null; $('#bg-pages').hidden = true;
+    await fetch(`/api/rooms/${encodeURIComponent(code)}/background`, { method: 'DELETE', headers: { authorization: `Bearer ${C.profile.token}` } }).catch(() => {});
+  }
+
+  // Save the whiteboard as a PNG: white paper, the same light grid, the background, then the drawing on top.
   function saveBoard() {
     const out = document.createElement('canvas');
     out.width = BOARD_W; out.height = BOARD_H;
@@ -571,6 +846,7 @@
     for (let x = 32; x < BOARD_W; x += 32) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, BOARD_H); }
     for (let y = 32; y < BOARD_H; y += 32) { g.moveTo(0, y + 0.5); g.lineTo(BOARD_W, y + 0.5); }
     g.stroke();
+    g.drawImage($('#board-bg'), 0, 0);
     g.drawImage($('#board'), 0, 0);
     out.toBlob((blob) => {
       if (!blob) return C.toast('Something went wrong. Try again.');
@@ -608,7 +884,12 @@
     socket?.disconnect(); socket = null;
     stopMedia();
     meAnalyser = null;
-    if ($('#spotlight').contains($('#board'))) $('#board-wrap').append($('#board'));
+    if ($('#spotlight').contains($('#board-stack'))) $('#board-wrap').append($('#board-stack'));
+    $('#lobby-wait').hidden = true;
+    $('#board-text').hidden = true; textAt = null;
+    lobbyCount = 0; $('#lobby').hidden = true; $('#lobby-badge').hidden = true;
+    pdfDoc = null; $('#bg-pages').hidden = true;
+    myId = null;
     pinnedId = null; spotId = null; boardBig = false;
     $('#spotlight').hidden = true; $('#stage').classList.remove('has-spot');
     $('#side').classList.remove('open');
