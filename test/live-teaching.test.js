@@ -126,11 +126,12 @@ describe('live teaching', () => {
       kid.emit('teacher', { action: 'breakout-end' }); // students cannot
       await wait(150);
       assert.equal((await join(await srv.connect(), { room, name: 'Peek' })).breakout.active, true);
-      const left = next(teacher, 'breakout');
       const id2 = kid2.id;
+      const left = next(teacher, 'breakout', 2000, (b) => !(id2 in b.groups));
       kid2.disconnect();
-      assert.ok(!(id2 in (await left).groups));
-      const off = next(kid, 'breakout');
+      assert.notEqual(await left, 'TIMEOUT', 'leaving removes you from your group');
+      // Lina may still receive the "Sami left" update after this point, so wait for the "ended" one
+      const off = next(kid, 'breakout', 2000, (b) => !b.active);
       teacher.emit('teacher', { action: 'breakout-end' });
       assert.equal((await off).active, false);
     });
