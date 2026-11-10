@@ -99,6 +99,8 @@
       applyFlags(res);
       setRecording(res.recording, null, true);
       loadBoard(res.strokes, res.bg);
+      setPoll(res.poll, true);
+      applyBreakout(res.breakout);
       renderLobby(res.lobby || []);
       res.peers.forEach((p) => { createPeer(p.id, p); call(p.id); });
       joinedAt = Date.now();
@@ -112,6 +114,12 @@
     socket.on('lobby', (list) => renderLobby(list, true));
     socket.on('board-bg', ({ v }) => showBackground(v));
     socket.on('board-remove', removeStroke);
+    socket.on('poll', (p) => setPoll(p));
+    socket.on('breakout', applyBreakout);
+    socket.on('files-changed', ({ name }) => {
+      C.refreshFiles(code);
+      if (name && myRole !== 'teacher') C.toast(tr('The teacher shared {name}. Open Files to see it.', { name }));
+    });
 
     socket.on('peer-joined', (p) => { createPeer(p.id, p); sys(tr('{name} joined.', { name: p.name })); renderPeople(); });
     socket.on('peer-left', ({ id }) => { const p = peers.get(id); if (p) sys(tr('{name} left.', { name: p.info.name })); removePeer(id); });
@@ -156,13 +164,14 @@
     };
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') pc.restartIce?.(); };
     addTile(id, info, stream, false);
+    applyVisibility(id);
     return p;
   }
 
   async function call(id) {
     const { pc } = peers.get(id);
-    pc.addTransceiver(audioTrack() || 'audio', { direction: 'sendrecv' });
-    pc.addTransceiver(outVideo() || 'video', { direction: 'sendrecv' });
+    pc.addTransceiver(trackFor(id, 'audio') || 'audio', { direction: 'sendrecv' });
+    pc.addTransceiver(trackFor(id, 'video') || 'video', { direction: 'sendrecv' });
     await pc.setLocalDescription(await pc.createOffer());
     socket.emit('signal', { to: id, data: { sdp: pc.localDescription } });
   }
@@ -175,8 +184,8 @@
         await pc.setRemoteDescription(data.sdp);
         if (data.sdp.type === 'offer') {
           const [ta, tv] = pc.getTransceivers();
-          if (ta) { ta.direction = 'sendrecv'; await ta.sender.replaceTrack(audioTrack()); }
-          if (tv) { tv.direction = 'sendrecv'; await tv.sender.replaceTrack(outVideo()); }
+          if (ta) { ta.direction = 'sendrecv'; await ta.sender.replaceTrack(trackFor(from, 'audio')); }
+          if (tv) { tv.direction = 'sendrecv'; await tv.sender.replaceTrack(trackFor(from, 'video')); }
           await pc.setLocalDescription(await pc.createAnswer());
           socket.emit('signal', { to: from, data: { sdp: pc.localDescription } });
         }
@@ -198,7 +207,69 @@
     updateSpotlight(); renderPeople(); layoutTiles();
   }
 
-  const videoSenders = () => [...peers.values()].map((p) => p.pc.getTransceivers()[1]?.sender).filter(Boolean);
+  // ---------- breakout groups ----------
+  // During group work you only send your camera and voice to people in your group,
+  // and other groups' tiles are hidden and muted.
+  let breakout = { active: false };
+  const groupOf = (id) => (breakout.active ? (breakout.groups[id === 'me' ? myId : id] ?? null) : null);
+  const canSee = (id) => !breakout.active || groupOf(id) === groupOf('me');
+  const groupName = (g) => (g === null ? tr('Main room') : tr('Group {n}', { n: g + 1 }));
+  function trackFor(id, kind) {
+    if (!canSee(id)) return null;
+    return kind === 'audio' ? audioTrack() : outVideo();
+  }
+  function syncSenders() {
+    return Promise.all([...peers].map(([id, p]) => {
+      const [ta, tv] = p.pc.getTransceivers();
+      return Promise.all([
+        ta?.sender.replaceTrack(trackFor(id, 'audio')).catch(() => {}),
+        tv?.sender.replaceTrack(trackFor(id, 'video')).catch(() => {}),
+      ]);
+    }));
+  }
+  function applyVisibility(id) {
+    const p = peers.get(id);
+    if (!p?.tile) return;
+    const see = canSee(id);
+    p.tile.hidden = !see;
+    p.tile.querySelector('video').muted = !see;
+    if (!see && pinnedId === id) pinnedId = null;
+  }
+  function applyBreakout(b) {
+    const before = groupOf('me'), wasActive = breakout.active;
+    breakout = b && b.active ? b : { active: false };
+    const mine = groupOf('me');
+    peers.forEach((_, id) => applyVisibility(id));
+    syncSenders();
+    $('#group-pill').hidden = !breakout.active;
+    $('#group-pill').textContent = groupName(mine);
+    $('#bo-setup').hidden = breakout.active;
+    $('#bo-live').hidden = !breakout.active;
+    if (breakout.active) {
+      const opts = [null, ...Array.from({ length: breakout.count }, (_, i) => i)];
+      $('#bo-visit').innerHTML = opts.map((g) => `<option value="${g === null ? '' : g}"${g === mine ? ' selected' : ''}>${esc(groupName(g))}</option>`).join('');
+    }
+    if (breakout.active && (!wasActive || before !== mine)) {
+      sys(tr('You are now in: {group}.', { group: groupName(mine) }));
+      if (myRole !== 'teacher') C.toast(tr('You are now in: {group}.', { group: groupName(mine) }));
+    } else if (!breakout.active && wasActive) {
+      sys(tr('Everyone is back together.'));
+      if (myRole !== 'teacher') C.toast('Everyone is back together.');
+    }
+    spotId = undefined;
+    updateSpotlight(); renderPeople();
+  }
+  $('#bo-start').addEventListener('click', () => {
+    const count = +$('#bo-count').value;
+    const students = [...peers].filter(([, p]) => p.info.role !== 'teacher').map(([id]) => id);
+    if (students.length < 2) return C.toast('You need at least two students to make groups.');
+    for (let i = students.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [students[i], students[j]] = [students[j], students[i]]; }
+    socket.emit('teacher', { action: 'breakout-start', count, assign: Object.fromEntries(students.map((id, i) => [id, i % count])) });
+  });
+  $('#bo-visit').addEventListener('change', (e) => {
+    socket.emit('teacher', { action: 'breakout-move', target: myId, group: e.target.value === '' ? null : +e.target.value });
+  });
+  $('#bo-end').addEventListener('click', () => socket.emit('teacher', { action: 'breakout-end' }));
 
   // ---------- tiles ----------
   const MIC_OFF = () => `<svg viewBox="0 0 24 24" aria-label="${tr('Microphone off')}"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/></svg>`;
@@ -242,7 +313,7 @@
   }
 
   function updateSpotlight() {
-    const sharer = [...peers].find(([, p]) => p.info.sharing)?.[0] || (screenTrack ? 'me' : null);
+    const sharer = [...peers].find(([id, p]) => p.info.sharing && canSee(id))?.[0] || (screenTrack ? 'me' : null);
     const target = boardBig ? 'board' : pinnedId || sharer;
     const spot = $('#spotlight');
     if (target === spotId && target !== null && target !== 'board' && spot.querySelector('video')?.srcObject) return;
@@ -310,7 +381,7 @@
       const s = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
       screenTrack = s.getVideoTracks()[0];
       screenTrack.onended = stopShare;
-      await Promise.all(videoSenders().map((x) => x.replaceTrack(screenTrack)));
+      await syncSenders();
       $('.tile.me video').srcObject = new MediaStream([screenTrack]);
       setPressed('#btn-share', true);
       sendState(); updateSpotlight();
@@ -319,7 +390,7 @@
   async function stopShare() {
     if (!screenTrack) return;
     screenTrack.onended = null; screenTrack.stop(); screenTrack = null;
-    await Promise.all(videoSenders().map((x) => x.replaceTrack(camTrack())));
+    await syncSenders();
     $('.tile.me video').srcObject = camStream;
     setPressed('#btn-share', false);
     if (pinnedId === 'me') pinnedId = null;
@@ -334,6 +405,7 @@
   $('#btn-leave').addEventListener('click', () => R.leave());
   $('#btn-end').addEventListener('click', () => { if (confirm(tr('End the class for everyone?'))) socket.emit('teacher', { action: 'end' }); });
   $('#btn-side').addEventListener('click', () => $('#side').classList.toggle('open'));
+  $('#btn-files').addEventListener('click', () => C.openFiles(code, course?.title, myRole === 'teacher'));
   $('#btn-copy-link').addEventListener('click', async () => { await navigator.clipboard?.writeText(C.inviteLink(code)).catch(() => {}); C.toast('Invite link copied'); });
 
   $('#btn-react').addEventListener('click', () => { const m = $('#react-menu'); m.hidden = !m.hidden; $('#btn-react').setAttribute('aria-expanded', String(!m.hidden)); });
@@ -449,6 +521,7 @@
     $$('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
     $$('.tab-panel').forEach((p) => (p.hidden = p.id !== `tab-${name}`));
     if (name === 'chat') { unread = 0; $('#chat-badge').hidden = true; }
+    if (name === 'poll') $('#poll-badge').hidden = true;
     if (name === 'board') sizeBoard();
   }
   $$('.tab').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
@@ -457,11 +530,17 @@
   let unread = 0;
   function sys(text) { const li = document.createElement('li'); li.className = 'sys'; li.textContent = text; appendChat(li); }
   function appendChat(li) { const log = $('#chat-log'); const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60; log.append(li); if (atBottom) log.scrollTop = log.scrollHeight; }
+  // during group work, say where a message came from
+  function chatScope(m) {
+    if (m.toAll) return ` <span class="role">${tr('to everyone')}</span>`;
+    if (m.group === undefined || m.group === groupOf('me')) return '';
+    return ` <span class="role">${esc(groupName(m.group))}</span>`;
+  }
   function onChat(m) {
     const li = document.createElement('li');
     if (m.from === myId) li.className = 'mine';
     const time = new Date(m.at).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit', hourCycle: window.I18N.lang === 'en' ? undefined : 'h23' });
-    li.innerHTML = `<div class="who">${m.from === myId ? tr('You') : esc(m.name)}${m.role === 'teacher' && m.from !== myId ? ` <span class="role">${tr('(Teacher)')}</span>` : ''}, ${time}</div><div class="bubble">${esc(m.text)}</div>`;
+    li.innerHTML = `<div class="who">${m.from === myId ? tr('You') : esc(m.name)}${m.role === 'teacher' && m.from !== myId ? ` <span class="role">${tr('(Teacher)')}</span>` : ''}${chatScope(m)}, ${time}</div><div class="bubble">${esc(m.text)}</div>`;
     appendChat(li);
     if ($('#tab-chat').hidden && m.from !== myId) { unread++; $('#chat-badge').textContent = unread; $('#chat-badge').hidden = false; }
   }
@@ -474,13 +553,18 @@
 
   // ---------- people & teacher tools ----------
   function renderPeople() {
-    const rows = [['me', infoOf('me')], ...[...peers].map(([id, p]) => [id, p.info])].filter(([, i]) => i);
+    // during group work, students only list their own group; the teacher lists everyone
+    const rows = [['me', infoOf('me')], ...[...peers].map(([id, p]) => [id, p.info])]
+      .filter(([id, i]) => i && (myRole === 'teacher' || canSee(id)));
     rows.sort((a, b) => (b[1].hand - a[1].hand) || (a[1].role === 'teacher' ? -1 : 1));
     $('#people-list').innerHTML = rows.map(([id, i]) => `
       <li>
         ${C.avatar(i.name)}
-        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</b><small>${tr(i.role === 'teacher' ? 'Teacher' : 'Student')}${i.mic === false ? ', ' + tr('muted') : ''}${i.sharing ? ', ' + tr('sharing screen') : ''}</small></div>
+        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</b><small>${tr(i.role === 'teacher' ? 'Teacher' : 'Student')}${i.mic === false ? ', ' + tr('muted') : ''}${i.sharing ? ', ' + tr('sharing screen') : ''}</small>${breakout.active && myRole === 'teacher' && id === 'me' ? ` <span class="grp">${esc(groupName(groupOf('me')))}</span>` : ''}</div>
         ${i.hand ? `<span class="hand-mark" title="${tr('Hand raised')}">✋</span>` : ''}
+        ${myRole === 'teacher' && id !== 'me' && breakout.active ? `<select data-move="${id}" aria-label="${esc(tr('Move {name} to a group', { name: i.name }))}">
+          ${[null, ...Array.from({ length: breakout.count }, (_, k) => k)].map((g) => `<option value="${g === null ? '' : g}"${g === groupOf(id) ? ' selected' : ''}>${esc(groupName(g))}</option>`).join('')}
+        </select>` : ''}
         ${myRole === 'teacher' && id !== 'me' ? `<div class="acts">
           ${i.hand ? `<button data-a="lower-hand" data-id="${id}">${tr('Lower hand')}</button>` : ''}
           ${i.mic !== false ? `<button data-a="mute" data-id="${id}">${tr('Mute')}</button>` : ''}
@@ -488,6 +572,10 @@
       </li>`).join('');
     $('#people-count').textContent = rows.length;
   }
+  $('#people-list').addEventListener('change', (e) => {
+    const s = e.target.closest('[data-move]'); if (!s) return;
+    socket.emit('teacher', { action: 'breakout-move', target: s.dataset.move, group: s.value === '' ? null : +s.value });
+  });
   $('#people-list').addEventListener('click', (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'remove' && !confirm(tr('Remove {name} from the class?', { name: peers.get(b.dataset.id)?.info.name }))) return;
@@ -541,6 +629,117 @@
     $('#t-lock-board').textContent = tr(boardLocked ? 'Let everyone draw' : 'Only I can draw');
     $('#board-note').hidden = !(boardLocked && myRole !== 'teacher');
   }
+
+  // ---------- polls & quizzes ----------
+  let poll = null;            // the poll as the server last sent it (students get counts only once results are shown)
+  const myVotes = new Map();  // poll id -> my answer
+  function setPoll(p, onJoin) {
+    const isNew = p && (!poll || poll.id !== p.id);
+    const revealed = p && poll && poll.id === p.id && !poll.shown && p.shown;
+    poll = p;
+    renderPoll();
+    if (myRole === 'teacher' || !(isNew || revealed)) return;
+    if ($('#tab-poll').hidden) $('#poll-badge').hidden = false;
+    if (!onJoin) C.toast(isNew ? 'Your teacher started a poll. Open the Poll tab to answer.' : 'The poll results are in.');
+  }
+
+  function renderPoll() {
+    const box = $('#poll-live');
+    const teacher = myRole === 'teacher';
+    $('#poll-form').hidden = !teacher || !!poll;
+    if (!poll) {
+      box.innerHTML = teacher ? '' : `<p class="poll-empty">${tr('No poll right now. When your teacher asks a question, it will show up here.')}</p>`;
+      return;
+    }
+    const mine = myVotes.get(poll.id);
+    const bars = !!poll.counts;
+    const items = poll.options.map((o, i) => {
+      const n = bars ? poll.counts[i] : 0;
+      const pct = bars && poll.total ? Math.round((n * 100) / poll.total) : 0;
+      const cls = `poll-choice${poll.correct === i ? ' right' : ''}`;
+      const inner = `${bars ? `<span class="bar" style="width:${pct}%"></span>` : ''}
+        <span class="label">${esc(o)}</span>
+        ${poll.correct === i ? `<span class="mark" title="${esc(tr('Right answer'))}">✓</span>` : ''}
+        ${bars ? `<span class="n">${n} · ${pct}%</span>` : ''}`;
+      if (!teacher && poll.open) return `<li><button type="button" class="${cls}" data-vote="${i}" aria-pressed="${mine === i}">${inner}</button></li>`;
+      return `<li><div class="${cls}"${!teacher && mine === i ? ' aria-pressed="true"' : ''}>${inner}</div></li>`;
+    }).join('');
+
+    let note = '';
+    if (teacher) {
+      note = `${tr(poll.total === 1 ? '1 answer' : '{n} answers', { n: poll.total })}, ${tr(poll.open ? 'voting is open' : poll.shown ? 'results shown to everyone' : 'voting is stopped')}`;
+    } else if (poll.open) {
+      note = tr(mine === undefined ? 'Choose your answer.' : 'Answer saved. You can change it until the teacher stops the vote.');
+    } else if (!poll.shown) {
+      note = tr('Voting is closed. Wait for the results.');
+    } else if (poll.quiz && mine !== undefined) {
+      note = tr(mine === poll.correct ? 'You got it right! 🎉' : 'Not this time. The right answer has a ✓.');
+    }
+
+    const actions = teacher ? `<div class="poll-actions">
+        ${poll.open ? `<button class="btn btn-ghost btn-sm" data-poll="poll-close" type="button">${tr('Stop voting')}</button>` : ''}
+        ${!poll.shown ? `<button class="btn btn-primary btn-sm" data-poll="poll-show" type="button">${tr('Show results to everyone')}</button>` : ''}
+        <button class="btn btn-ghost btn-sm" data-poll="poll-end" type="button">${tr('End poll')}</button>
+      </div>` : '';
+    const voters = teacher && poll.voters?.length ? `<details><summary class="small">${tr('Who answered what')}</summary>
+        <ul class="poll-voters">${poll.voters.map((v) => `<li>${esc(v.name)}: ${esc(poll.options[v.choice])}</li>`).join('')}</ul></details>` : '';
+
+    box.innerHTML = `<div class="stack">
+      <p class="poll-meta">${tr(poll.quiz ? 'Quiz' : 'Poll')}</p>
+      <h3 class="poll-q">${esc(poll.q)}</h3>
+      <ul class="poll-choices">${items}</ul>
+      <p class="${teacher ? 'poll-meta' : 'poll-result'}">${esc(note)}</p>
+      ${actions}${voters}
+    </div>`;
+  }
+  $('#poll-live').addEventListener('click', (e) => {
+    const v = e.target.closest('[data-vote]');
+    if (v && poll) {
+      const id = poll.id, choice = +v.dataset.vote;
+      myVotes.set(id, choice);
+      renderPoll();
+      socket.emit('vote', { id, choice }, (r) => { if (!r?.ok) { myVotes.delete(id); renderPoll(); C.toast('Voting is closed.'); } });
+    }
+    const a = e.target.closest('[data-poll]');
+    if (a) socket.emit('teacher', { action: a.dataset.poll });
+  });
+
+  // teacher: the "new poll" form
+  function syncPollForm() {
+    const items = [...$('#poll-opts').children];
+    items.forEach((li, i) => {
+      li.querySelector('input[type="text"]').placeholder = tr('Answer {n}', { n: i + 1 });
+      li.querySelector('.rm').hidden = items.length <= 2;
+      li.querySelector('input[type="radio"]').hidden = !$('#poll-quiz').checked;
+    });
+    $('#poll-add').hidden = items.length >= 6;
+  }
+  function addPollOption() {
+    if ($('#poll-opts').children.length >= 6) return;
+    const li = document.createElement('li');
+    li.innerHTML = `<input type="radio" name="poll-correct" aria-label="${esc(tr('Right answer'))}"><input type="text" maxlength="80"><button class="rm" type="button" aria-label="${esc(tr('Remove this answer'))}">×</button>`;
+    $('#poll-opts').append(li);
+    syncPollForm();
+    return li;
+  }
+  function resetPollForm() { $('#poll-form').reset(); $('#poll-opts').innerHTML = ''; addPollOption(); addPollOption(); }
+  resetPollForm();
+  $('#poll-add').addEventListener('click', () => addPollOption()?.querySelector('input[type="text"]').focus());
+  $('#poll-quiz').addEventListener('change', syncPollForm);
+  $('#poll-opts').addEventListener('click', (e) => { if (e.target.closest('.rm')) { e.target.closest('li').remove(); syncPollForm(); } });
+  $('#poll-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = e.target.q.value.trim();
+    const rows = [...$('#poll-opts').children].map((li) => ({ text: li.querySelector('input[type="text"]').value.trim(), right: li.querySelector('input[type="radio"]').checked })).filter((r) => r.text);
+    if (rows.length < 2) return C.toast('Write at least two answers.');
+    let correct = null;
+    if ($('#poll-quiz').checked) {
+      correct = rows.findIndex((r) => r.right);
+      if (correct < 0) return C.toast('Tick the right answer for the quiz.');
+    }
+    socket.emit('teacher', { action: 'poll-start', q, options: rows.map((r) => r.text), correct });
+    resetPollForm();
+  });
 
   // ---------- whiteboard ----------
   // Every item has an id. A pen stroke is sent in several pieces that share one id,
@@ -890,6 +1089,8 @@
     lobbyCount = 0; $('#lobby').hidden = true; $('#lobby-badge').hidden = true;
     pdfDoc = null; $('#bg-pages').hidden = true;
     myId = null;
+    breakout = { active: false }; $('#group-pill').hidden = true; $('#bo-setup').hidden = false; $('#bo-live').hidden = true;
+    poll = null; $('#poll-badge').hidden = true;
     pinnedId = null; spotId = null; boardBig = false;
     $('#spotlight').hidden = true; $('#stage').classList.remove('has-spot');
     $('#side').classList.remove('open');
