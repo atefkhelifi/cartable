@@ -22,3 +22,9 @@ services:
         sync: false
       - key: TURN_CREDENTIAL
         sync: false
+      - key: LIVEKIT_URL
+        sync: false           # optional: wss://<project>.livekit.cloud for classes bigger than 16
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
