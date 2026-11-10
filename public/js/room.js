@@ -81,9 +81,10 @@
 
     socket = io({ transports: ['websocket', 'polling'] });
     socket.on('connect', () => {
-      socket.emit('join', { room: code, name: C.profile.name, role: C.profile.role, teacherCode: C.profile.teacherCode }, (res) => {
+      socket.emit('join', { room: code, name: C.profile.name, token: C.profile.token }, (res) => {
         if (res.error) { C.toast(res.error); R.leave(); return; }
         myId = res.id; myRole = res.role;
+        C.rememberRoom(code);
         document.body.classList.toggle('is-teacher', myRole === 'teacher');
         addTile('me', { name: C.profile.name, role: myRole, mic: micOn, cam: camOn, hand: false }, camStream, true);
         sendState();
