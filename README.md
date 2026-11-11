@@ -13,7 +13,7 @@ whiteboard. Students see their timetable and join with one click.
 **Live classroom**
 - Video and voice calls between the teacher and up to 15 students (peer-to-peer WebRTC)
 - Screen sharing, shown big on everyone's stage automatically
-- Shared whiteboard with a pen, lines, arrows, rectangles, circles, text, colours and an eraser; undo and redo (`Ctrl+Z` / `Ctrl+Y`) for your own drawings; a "show big" mode; and "Save as image" (PNG)
+- Shared whiteboard with a pen, lines, arrows, rectangles, circles, text, colours and an eraser; undo and redo (`Ctrl+Z` / `Ctrl+Y`) for your own drawings; a "show big" mode; "Save as image" (PNG), and "Add to class files" for the teacher, so students can download the board after class
 - Whiteboard background (teacher): put a picture or a PDF worksheet behind the drawings and move through its pages. The PDF is opened in the teacher's browser with [PDF.js](https://mozilla.github.io/pdf.js/); only the current page is shared, and it is forgotten when the class ends.
 - Waiting room: students wait until the teacher lets them in. Turn it on for a class when you plan it, or during the class.
 - Chat, a big "raise hand" button, and emoji reactions
@@ -31,6 +31,7 @@ whiteboard. Students see their timetable and join with one click.
 - Class lists: the teacher adds students (one name per line) and Cartable makes a sign-in code for each student (like `k7pm-w3xa`) and one for a parent (like `p-x4kq9-m2rtw`). Codes are shown once, on printable cards; the teacher can make new ones if a code is lost.
 - Classes planned for a class list show up on those students' timetables automatically. In a live class, the teacher sees who signed in with a code and who joined as a guest.
 - Homework: give homework to a class list with instructions, files and a due date. Students write an answer and add files or photos, hand in (or take it back) until it is marked. The teacher sees who handed in, late work, and gives a mark and a comment.
+- Marks (gradebook): every homework of a class list against every student, with what is missing, handed in or late. The teacher can type marks straight into the table (for work on paper), sees an average for marks like `15/20`, and downloads it all as a CSV file for Excel or LibreOffice.
 - Parent view (read-only): the child's timetable, homework with marks and comments, and the live classes the child joined.
 
 **School admin**
@@ -42,7 +43,8 @@ whiteboard. Students see their timetable and join with one click.
 - Month calendar with colour-coded classes
 - "Today" page with the next class, a countdown, and what to bring
 - Weekly repeating classes (up to a whole school year), editable one day at a time or every week at once
-- Class reminders: a browser notification 5 minutes before each class while Cartable is open in a tab
+- Notifications, even when Cartable is closed: 5 minutes before each class (teachers, students and parents), and when homework is given or marked (students and parents). Guests without a code get reminders while Cartable is open in a tab.
+- Installable app: add Cartable to the home screen or desktop (it opens in its own window and starts without a network). On iPhone and iPad, notifications need Cartable on the home screen first.
 - Students can join from 10 minutes before a class starts
 - Invite links and class codes
 - Download every class as an `.ics` file for Google Calendar, Outlook or Apple Calendar
@@ -174,6 +176,11 @@ Node 22 and 24 for every push to `main` and every pull request.
   `db.json.migrated`. Existing classes go to the first teacher who creates an
   account.
 - Attendance is deleted after 365 days. Change this with `ATTENDANCE_DAYS`.
+- **Notifications** use Web Push. Cartable makes its own keys and keeps them in the
+  data folder (or set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`). Class reminders
+  read class times in the server's time zone, so set `TZ` to the school's, for
+  example `TZ=Europe/Paris` or `TZ=Africa/Tunis` (Render runs in UTC). A server
+  that sleeps (Render's free plan) cannot send reminders while asleep.
 - Review your local child privacy rules (GDPR, COPPA) before using Cartable with
   real children.
 - Video goes directly between browsers. Recordings are only made when the teacher starts one, everyone is told, and the file stays on the teacher's computer (nothing is uploaded). Get parents' consent before recording children, as your local rules require.

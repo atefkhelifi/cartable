@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { Server } = require('socket.io');
 const { DatabaseSync } = require('node:sqlite');
+const push = require('./lib/push');
 
 const PORT = process.env.PORT || 3000;
 const PROD = process.env.NODE_ENV === 'production';
@@ -195,6 +196,18 @@ sql.exec(`CREATE TABLE IF NOT EXISTS password_resets (
   code_hash TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 )`);
+// Browsers that asked for notifications (Web Push). owner is a teacher id (kind 'teacher') or a student id.
+sql.exec(`CREATE TABLE IF NOT EXISTS push_subs (
+  endpoint TEXT PRIMARY KEY,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  owner TEXT NOT NULL,
+  lang TEXT NOT NULL DEFAULT 'en',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_subs_owner ON push_subs(owner);
+CREATE TABLE IF NOT EXISTS push_sent (key TEXT PRIMARY KEY, at INTEGER NOT NULL)`);
 // Every school needs an admin: if there is none yet, the oldest teacher account becomes one.
 if (!sql.prepare('SELECT 1 FROM teachers WHERE is_admin = 1').get()) {
   sql.prepare('UPDATE teachers SET is_admin = 1 WHERE id = (SELECT id FROM teachers ORDER BY created_at LIMIT 1)').run();
@@ -278,6 +291,9 @@ function prune() {
   sql.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
   sql.prepare('DELETE FROM instant_rooms WHERE expires_at < ?').run(now - ATTENDANCE_DAYS * DAY);
   sql.prepare('DELETE FROM attendance WHERE at < ?').run(now - ATTENDANCE_DAYS * DAY);
+  sql.prepare('DELETE FROM push_sent WHERE at < ?').run(now - 3 * DAY);
+  sql.prepare(`DELETE FROM push_subs WHERE (kind = 'teacher' AND owner NOT IN (SELECT id FROM teachers))
+    OR (kind != 'teacher' AND owner NOT IN (SELECT id FROM students))`).run();
   dropOrphanFiles();
   // files on disk that no table knows about (left over from a crash or a delete)
   const known = new Set([...sql.prepare('SELECT id FROM class_files').all(), ...sql.prepare('SELECT id FROM hw_files').all()].map((f) => f.id));
@@ -431,7 +447,11 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '50kb' }));
 app.get('/healthz', (req, res) => res.send('ok'));
 app.get('/api/config', (req, res) => res.json({ iceServers: ICE_SERVERS }));
-app.use(express.static(path.join(__dirname, 'public')));
+// the service worker is checked for updates on every visit
+app.get('/sw.js', (req, res, next) => { res.set('cache-control', 'no-cache'); next(); });
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, file) => { if (file.endsWith('.webmanifest')) res.set('content-type', 'application/manifest+json'); },
+}));
 
 const bearer = (req) => (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
 app.use('/api', (req, res, next) => {
@@ -970,6 +990,7 @@ app.post('/api/homework', needTeacher, (req, res) => {
   const id = newId();
   sql.prepare('INSERT INTO homework (id, teacher_id, roster_id, title, instructions, due, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(id, req.teacher.id, r.id, f.title, f.instructions, f.due, Date.now());
+  notifyHomework({ id, roster_id: r.id, title: f.title, due: f.due }).catch(() => {});
   res.status(201).json({ id });
 });
 app.patch('/api/homework/:id', needTeacher, (req, res) => {
@@ -1020,6 +1041,8 @@ app.patch('/api/submissions/:id', needTeacher, (req, res) => {
   const mark = cleanName(req.body?.mark, 20), feedback = String(req.body?.feedback || '').replace(/\r/g, '').slice(0, 2000);
   if (!mark && !feedback.trim()) return res.status(400).json({ error: 'Add a mark or a comment.' });
   sql.prepare('UPDATE submissions SET mark = ?, feedback = ?, marked_at = ? WHERE id = ?').run(mark, feedback, Date.now(), s.id);
+  // tell the student and their parent the first time it is marked, or when the mark changes
+  if (!s.marked_at || mark !== s.mark) notifyMarked(a.h, s.student_id, mark).catch(() => {});
   res.json({ ok: true });
 });
 
@@ -1099,6 +1122,140 @@ app.get('/api/my/attendance', needSignedIn, (req, res) => {
   res.json(sql.prepare(`SELECT a.at, a.room, (SELECT c.title FROM courses c WHERE c.room = a.room LIMIT 1) AS title
       FROM attendance a WHERE a.student_id = ? ORDER BY a.at DESC LIMIT 300`).all(req.pupil.id)
     .map((a) => ({ at: new Date(a.at).toISOString(), title: a.title || '' })));
+});
+
+// ---------- notifications (Web Push) ----------
+// Students and parents hear about new homework, marks and classes about to start; teachers about their classes.
+const PUSH = push.loadKeys(DATA_DIR);
+const PUSH_SUBJECT = process.env.PUSH_CONTACT || 'https://github.com/atefkhelifi/cartable';
+const PUSH_TEXT = {
+  en: {
+    soon: '{title} starts in {n} minutes', soonBody: 'Tap to join the class.', soonParent: '{name} has {title} in {n} minutes',
+    hw: 'New homework: {title}', hwBody: 'Due {date}', hwParent: 'New homework for {name}: {title}',
+    marked: 'Homework marked: {title}', markedParent: "{name}'s homework is marked: {title}", mark: 'Mark: {mark}', comment: 'Your teacher left a comment.',
+  },
+  fr: {
+    soon: '{title} commence dans {n} minutes', soonBody: 'Touchez pour rejoindre le cours.', soonParent: '{name} a « {title} » dans {n} minutes',
+    hw: 'Nouveau devoir : {title}', hwBody: 'À rendre {date}', hwParent: 'Nouveau devoir pour {name} : {title}',
+    marked: 'Devoir corrigé : {title}', markedParent: 'Le devoir de {name} est corrigé : {title}', mark: 'Note : {mark}', comment: "L'enseignant a laissé un commentaire.",
+  },
+  ar: {
+    soon: '{title} تبدأ بعد {n} دقائق', soonBody: 'اضغط للانضمام إلى الحصة.', soonParent: 'لدى {name} حصة «{title}» بعد {n} دقائق',
+    hw: 'واجب جديد: {title}', hwBody: 'التسليم {date}', hwParent: 'واجب جديد لـ{name}: {title}',
+    marked: 'تم تصحيح الواجب: {title}', markedParent: 'تم تصحيح واجب {name}: {title}', mark: 'العلامة: {mark}', comment: 'ترك المعلم تعليقًا.',
+  },
+};
+const LOCALES = { en: 'en-GB', fr: 'fr-FR', ar: 'ar-TN' };
+const pt = (lang, key, vars = {}) => (PUSH_TEXT[lang] || PUSH_TEXT.en)[key].replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+const pushDay = (lang, d) => new Date(d + 'T12:00:00Z').toLocaleDateString(LOCALES[lang] || 'en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+// Send to every device of the given owners. make(sub) builds the message in that device's language.
+async function notify(where, args, make) {
+  const subs = sql.prepare(`SELECT * FROM push_subs WHERE ${where}`).all(...args);
+  await Promise.all(subs.map(async (sub) => {
+    if ((await push.send(PUSH, PUSH_SUBJECT, sub, make(sub))) === 'gone') sql.prepare('DELETE FROM push_subs WHERE endpoint = ?').run(sub.endpoint);
+  }));
+  return subs.length;
+}
+const studentName = (id) => sql.prepare('SELECT name FROM students WHERE id = ?').get(id)?.name || '';
+
+function notifyHomework(h) {
+  return notify("kind != 'teacher' AND owner IN (SELECT id FROM students WHERE roster_id = ?)", [h.roster_id], (sub) => ({
+    title: pt(sub.lang, sub.kind === 'parent' ? 'hwParent' : 'hw', { title: h.title, name: studentName(sub.owner) }),
+    body: pt(sub.lang, 'hwBody', { date: pushDay(sub.lang, h.due) }),
+    url: '/#/homework', tag: 'hw-' + h.id,
+  }));
+}
+function notifyMarked(h, studentId, mark) {
+  return notify("kind != 'teacher' AND owner = ?", [studentId], (sub) => ({
+    title: pt(sub.lang, sub.kind === 'parent' ? 'markedParent' : 'marked', { title: h.title, name: studentName(studentId) }),
+    body: mark ? pt(sub.lang, 'mark', { mark }) : pt(sub.lang, 'comment'),
+    url: '/#/homework', tag: 'mark-' + h.id,
+  }));
+}
+
+// Class reminders, a few minutes before each class. Class times are read in the server's time zone,
+// so set TZ to the school's (for example TZ=Europe/Paris).
+const REMIND_MIN = 5;
+const localDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function classReminders(now = Date.now()) {
+  const day = localDay(new Date(now)), next = localDay(new Date(now + REMIND_MIN * 60e3));
+  for (const c of sql.prepare('SELECT * FROM courses WHERE date IN (?, ?)').all(day, next)) {
+    const start = new Date(`${c.date}T${c.start_time}:00`).getTime();
+    if (start <= now || start - now > REMIND_MIN * 60e3) continue;
+    if (sql.prepare('INSERT OR IGNORE INTO push_sent (key, at) VALUES (?, ?)').run('c:' + c.id, now).changes === 0) continue;
+    const n = Math.max(1, Math.round((start - now) / 60e3));
+    const conds = ["(kind = 'teacher' AND owner = ?)"], args = [c.teacher_id];
+    if (c.roster_id) { conds.push("(kind != 'teacher' AND owner IN (SELECT id FROM students WHERE roster_id = ?))"); args.push(c.roster_id); }
+    notify(conds.join(' OR '), args, (sub) => ({
+      title: pt(sub.lang, sub.kind === 'parent' ? 'soonParent' : 'soon', { title: c.title, n, name: studentName(sub.owner) }),
+      body: sub.kind === 'parent' ? '' : pt(sub.lang, 'soonBody'),
+      url: sub.kind === 'parent' ? '/#/today' : '/#/room/' + c.room, tag: 'class-' + c.id,
+    })).catch(() => {});
+  }
+}
+setInterval(() => { try { classReminders(); } catch (e) { console.error('Class reminders failed:', e.message); } }, 60e3).unref();
+
+app.get('/api/push/key', (req, res) => res.json({ key: PUSH.publicKey }));
+app.post('/api/push/subscribe', needSignedIn, (req, res) => {
+  const sub = req.body?.subscription, keys = sub?.keys;
+  const ok = sub && typeof sub.endpoint === 'string' && sub.endpoint.length < 1000 && push.allowedEndpoint(sub.endpoint, !PROD)
+    && typeof keys?.p256dh === 'string' && Buffer.from(keys.p256dh, 'base64url').length === 65
+    && typeof keys?.auth === 'string' && Buffer.from(keys.auth, 'base64url').length >= 16;
+  if (!ok) return res.status(400).json({ error: 'This browser cannot get notifications.' });
+  const lang = ['en', 'fr', 'ar'].includes(req.body.lang) ? req.body.lang : 'en';
+  const [kind, owner] = req.teacher ? ['teacher', req.teacher.id] : [req.pupil.kind, req.pupil.id];
+  sql.prepare(`INSERT INTO push_subs (endpoint, p256dh, auth, kind, owner, lang, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, kind = excluded.kind, owner = excluded.owner, lang = excluded.lang`)
+    .run(sub.endpoint, keys.p256dh, keys.auth, kind, owner, lang, Date.now());
+  res.status(201).json({ ok: true });
+});
+// Only the browser knows its endpoint, so it may turn notifications off even after signing out.
+app.post('/api/push/unsubscribe', (req, res) => {
+  sql.prepare('DELETE FROM push_subs WHERE endpoint = ?').run(String(req.body?.endpoint || ''));
+  res.json({ ok: true });
+});
+if (!PROD) app.post('/api/test/reminders', (req, res) => { classReminders(Number(req.body?.now) || Date.now()); res.json({ ok: true }); });
+
+// ---------- gradebook ----------
+// Every student of a class list against every homework; the app shows it as a table or a CSV file.
+app.get('/api/rosters/:id/gradebook', needTeacher, (req, res) => {
+  const r = myRoster(req, req.params.id);
+  if (!r) return res.status(404).json({ error: 'Class list not found.' });
+  const hw = sql.prepare('SELECT id, title, due FROM homework WHERE roster_id = ? ORDER BY due, created_at').all(r.id);
+  const students = sql.prepare('SELECT id, name FROM students WHERE roster_id = ? ORDER BY name COLLATE NOCASE').all(r.id);
+  const subs = new Map(sql.prepare('SELECT s.* FROM submissions s JOIN homework h ON h.id = s.homework_id WHERE h.roster_id = ?').all(r.id)
+    .map((x) => [x.homework_id + ':' + x.student_id, x]));
+  const iso = (t) => (t ? new Date(t).toISOString() : null);
+  res.json({
+    roster: { id: r.id, name: r.name },
+    homework: hw,
+    students: students.map((st) => ({
+      id: st.id, name: st.name,
+      cells: hw.map((h) => {
+        const x = subs.get(h.id + ':' + st.id);
+        return { mark: x?.marked_at ? x.mark : '', submittedAt: iso(x?.submitted_at), markedAt: iso(x?.marked_at) };
+      }),
+    })),
+  });
+});
+// Type a mark straight into the gradebook (for work on paper, or an oral). An empty mark takes it away.
+app.put('/api/homework/:id/marks/:student', needTeacher, (req, res) => {
+  const a = homeworkAccess(req, req.params.id);
+  if (!a || a.as !== 'teacher') return res.status(404).json({ error: 'Homework not found.' });
+  const st = sql.prepare('SELECT id FROM students WHERE id = ? AND roster_id = ?').get(String(req.params.student), a.h.roster_id);
+  if (!st) return res.status(404).json({ error: 'Student not found.' });
+  const mark = cleanName(req.body?.mark, 20);
+  let x = sql.prepare('SELECT * FROM submissions WHERE homework_id = ? AND student_id = ?').get(a.h.id, st.id);
+  if (!x && !mark) return res.json({ ok: true, mark: '', markedAt: null });
+  if (!x) {
+    sql.prepare('INSERT INTO submissions (id, homework_id, student_id) VALUES (?, ?, ?)').run(newId(), a.h.id, st.id);
+    x = sql.prepare('SELECT * FROM submissions WHERE homework_id = ? AND student_id = ?').get(a.h.id, st.id);
+  }
+  const markedAt = mark || x.feedback.trim() ? Date.now() : null;
+  sql.prepare('UPDATE submissions SET mark = ?, marked_at = ? WHERE id = ?').run(mark, markedAt, x.id);
+  if (mark && mark !== x.mark) notifyMarked(a.h, st.id, mark).catch(() => {});
+  res.json({ ok: true, mark, markedAt: markedAt ? new Date(markedAt).toISOString() : null });
 });
 
 // Body too big: answer in JSON so the app can show a friendly message.

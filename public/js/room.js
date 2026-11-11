@@ -1011,6 +1011,7 @@
     $('#board-redo').addEventListener('click', redo);
     $('#board-big').addEventListener('click', () => { boardBig = !boardBig; pinnedId = null; updateSpotlight(); });
     $('#board-save').addEventListener('click', saveBoard);
+    $('#board-share').addEventListener('click', shareBoard);
     $('#bg-file').addEventListener('change', onBackgroundFile);
     $('#bg-prev').addEventListener('click', () => showPdfPage(pdfPage - 1));
     $('#bg-next').addEventListener('click', () => showPdfPage(pdfPage + 1));
@@ -1158,8 +1159,8 @@
     await fetch(`/api/rooms/${encodeURIComponent(code)}/background`, { method: 'DELETE', headers: { authorization: `Bearer ${C.profile.token}` } }).catch(() => {});
   }
 
-  // Save the whiteboard as a PNG: white paper, the same light grid, the background, then the drawing on top.
-  function saveBoard() {
+  // The whiteboard as a PNG: white paper, the same light grid, the background, then the drawing on top.
+  function boardPng() {
     const out = document.createElement('canvas');
     out.width = BOARD_W; out.height = BOARD_H;
     const g = out.getContext('2d');
@@ -1173,21 +1174,41 @@
     g.stroke();
     g.drawImage($('#board-bg'), 0, 0);
     g.drawImage($('#board'), 0, 0);
-    out.toBlob((blob) => {
-      if (!blob) return C.toast('Something went wrong. Try again.');
-      const d = new Date();
-      const p = (n) => String(n).padStart(2, '0');
-      const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}h${p(d.getMinutes())}`;
-      const title = (course?.title || tr('Whiteboard')).replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Cartable - ${title} - ${stamp}.png`;
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 30e3);
-      C.toast('Whiteboard saved to your downloads.');
-    }, 'image/png');
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}h${p(d.getMinutes())}`;
+    const title = (course?.title || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60);
+    const name = [tr('Whiteboard'), title, stamp].filter(Boolean).join(' - ') + '.png';
+    return new Promise((resolve) => out.toBlob((blob) => resolve(blob && { blob, name }), 'image/png'));
+  }
+  async function saveBoard() {
+    const png = await boardPng();
+    if (!png) return C.toast('Something went wrong. Try again.');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(png.blob);
+    a.download = png.name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30e3);
+    C.toast('Whiteboard saved to your downloads.');
+  }
+  // Teacher: keep the board with the class, so students can download it after class from Files.
+  async function shareBoard() {
+    const b = $('#board-share');
+    const png = await boardPng();
+    if (!png) return C.toast('Something went wrong. Try again.');
+    b.disabled = true;
+    try {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(code)}/files`, {
+        method: 'POST',
+        headers: { 'content-type': 'image/png', 'x-file-name': encodeURIComponent(png.name), authorization: `Bearer ${C.profile?.token || ''}` },
+        body: png.blob,
+      });
+      if (!res.ok) throw new Error(tr((await res.json().catch(() => ({}))).error || 'Something went wrong. Try again.'));
+      C.toast('The whiteboard is in the class files. Everyone can download it from Files.');
+    } catch (err) { C.toast(err.message); }
+    finally { b.disabled = false; }
   }
 
   // ---------- clock / leave ----------
