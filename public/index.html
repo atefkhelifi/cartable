@@ -9,6 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Baloo+Bhaijaan+2:wght@500;600;700&family=Fredoka:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="Cartable">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='9' width='26' height='19' rx='5' fill='%232F6FED'/><path d='M11 9V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3' fill='none' stroke='%231B2A4A' stroke-width='2.5'/><rect x='13' y='14' width='6' height='5' rx='1.5' fill='%23FFC93C'/></svg>">
 </head>
 <body>
@@ -86,6 +90,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></svg>
         <span>Class lists</span>
       </a>
+      <a class="rail-link" href="#/marks" data-nav="marks" id="nav-marks" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M9 9.5V20M15 9.5V20"/></svg>
+        <span>Marks</span>
+      </a>
       <a class="rail-link" href="#/attendance" data-nav="attendance" id="nav-attendance" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
         <span>Attendance</span>
@@ -100,9 +108,9 @@
       </a>
       <div class="rail-spacer"></div>
       <div class="lang-switch" role="group" aria-label="Language"><button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="fr" aria-pressed="false">FR</button><button type="button" data-lang="ar" aria-pressed="false" aria-label="العربية" lang="ar">ع</button></div>
-      <button class="rail-link" id="btn-remind" type="button" aria-pressed="false" title="Get a notification 5 minutes before each class while Cartable is open">
+      <button class="rail-link" id="btn-remind" type="button" aria-pressed="false" title="Get a notification before each class, and for new homework and marks">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>
-        <span>Reminders</span>
+        <span>Notifications</span>
       </button>
       <div class="me-chip" id="me-chip"></div>
       <button class="rail-link teacher-only" id="btn-password" type="button">
@@ -193,6 +201,18 @@
           </div>
           <section class="panel" id="roster-detail"></section>
         </div>
+      </section>
+
+      <!-- MARKS (teacher gradebook) -->
+      <section id="view-marks" class="view" hidden>
+        <header class="page-head">
+          <div><h1>Marks</h1><p class="muted">Every homework of a class list, with each student's mark. Type a mark straight into the table for work done on paper.</p></div>
+          <div class="head-actions">
+            <label class="field field-inline"><span>Class list</span><select id="gb-roster"></select></label>
+            <button class="btn btn-ghost" id="gb-csv" type="button">Download (.csv)</button>
+          </div>
+        </header>
+        <section class="panel gb-panel" id="gb-box"></section>
       </section>
 
       <!-- ATTENDANCE (parent) -->
@@ -351,6 +371,7 @@
             <button class="btn btn-ghost btn-sm teacher-only" id="bg-remove" type="button" hidden>Remove background</button>
             <button class="btn btn-ghost btn-sm" id="board-big" type="button">Show big</button>
             <button class="btn btn-ghost btn-sm" id="board-save" type="button">Save as image</button>
+            <button class="btn btn-ghost btn-sm teacher-only" id="board-share" type="button">Add to class files</button>
           </div>
           <div class="board-wrap" id="board-wrap">
             <div class="board-stack" id="board-stack">

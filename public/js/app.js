@@ -188,10 +188,13 @@
     }
     C.profile = p;
     store.set('cartable.profile', p);
+    pushChecked = false;
     route();
   });
 
   function signOut() {
+    // the next person on this device must not get this person's notifications
+    pushOff().catch(() => {});
     if (C.profile?.token) C.api('/api/auth/logout', { method: 'POST' }).catch(() => {});
     store.del('cartable.profile');
     C.profile = null;
@@ -266,6 +269,7 @@
   }
 
   // ---------- routing ----------
+  let pushChecked = false;
   async function route() {
     const [, view = 'today', arg] = (location.hash || '#/today').split('/');
     if (C.profile && !(await checkSession())) return route();
@@ -277,6 +281,7 @@
       return;
     }
     $('#view-welcome').hidden = true;
+    if (!pushChecked) { pushChecked = true; syncPush(); }
     syncRemindButton();
     document.body.classList.toggle('is-teacher', isTeacher());
     document.body.classList.toggle('is-parent', isParent());
@@ -285,10 +290,11 @@
     $('#nav-homework').hidden = !hasAccount();
     $('#nav-classes').hidden = !isTeacher();
     $('#nav-attendance').hidden = !isParent();
+    $('#nav-marks').hidden = !isTeacher();
     $('#nav-school').hidden = !isAdmin();
 
     if (view === 'room' && isParent()) { location.hash = '#/today'; return; }
-    const allowed = { homework: hasAccount(), classes: isTeacher(), attendance: isParent(), school: isAdmin() };
+    const allowed = { homework: hasAccount(), classes: isTeacher(), attendance: isParent(), school: isAdmin(), marks: isTeacher() };
     if (view in allowed && !allowed[view]) { location.hash = '#/today'; return; }
     if (view === 'room' && arg) {
       $('#shell').hidden = true;
@@ -644,16 +650,68 @@
     catch (err) { C.toast(err.message); }
   });
 
-  // ---------- class reminders (browser notifications while Cartable is open) ----------
+  // ---------- notifications ----------
+  // Signed in (teacher, student with a code, parent): real push notifications from the server, even when
+  // Cartable is closed: classes about to start, new homework, marks. Guests: reminders while Cartable is open.
   const REMIND_MIN = 5;
+  const canPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  let pushOn = false;
+  const swReady = () => ('serviceWorker' in navigator ? navigator.serviceWorker.ready : Promise.reject(new Error('no service worker')));
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('service worker', err));
+  }
+  async function pushSubscription() {
+    if (!canPush()) return null;
+    try { return await (await swReady()).pushManager.getSubscription(); } catch { return null; }
+  }
+  async function pushOnServer(sub) {
+    await C.api('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON(), lang: window.I18N.lang }) });
+  }
+  async function pushEnable() {
+    const { key } = await C.api('/api/push/key');
+    const reg = await swReady();
+    const sub = (await reg.pushManager.getSubscription())
+      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)) });
+    await pushOnServer(sub);
+    pushOn = true;
+  }
+  async function pushOff() {
+    const sub = await pushSubscription();
+    pushOn = false;
+    if (!sub) return;
+    await fetch('/api/push/unsubscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+    await sub.unsubscribe().catch(() => {});
+  }
+  // On each visit: is this device subscribed? Re-send it, so the server has the right person and language.
+  async function syncPush() {
+    const sub = hasAccount() && canPush() && Notification.permission === 'granted' ? await pushSubscription() : null;
+    pushOn = !!sub;
+    if (sub) pushOnServer(sub).catch(() => {});
+    syncRemindButton();
+  }
+
   const reminded = new Set(store.get('cartable.reminded') || []);
-  const remindOn = () => store.get('cartable.remind') === true && 'Notification' in window && Notification.permission === 'granted';
-  const syncRemindButton = () => $('#btn-remind').setAttribute('aria-pressed', String(remindOn()));
+  const localOn = () => !hasAccount() && store.get('cartable.remind') === true && 'Notification' in window && Notification.permission === 'granted';
+  const syncRemindButton = () => $('#btn-remind').setAttribute('aria-pressed', String(pushOn || localOn()));
   $('#btn-remind').addEventListener('click', async () => {
     if (!('Notification' in window)) return C.toast('This browser cannot show notifications.');
-    if (remindOn()) { store.set('cartable.remind', false); syncRemindButton(); return C.toast('Class reminders are off.'); }
+    if (pushOn) { await pushOff(); syncRemindButton(); return C.toast('Notifications are off on this device.'); }
+    if (localOn()) { store.set('cartable.remind', false); syncRemindButton(); return C.toast('Class reminders are off.'); }
     const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
     if (p !== 'granted') return C.toast('Notifications are blocked. Allow them for this site in your browser settings.');
+    if (hasAccount() && canPush()) {
+      try {
+        await pushEnable();
+        syncRemindButton();
+        return C.toast(isTeacher() ? t('You will get a notification {n} minutes before each of your classes.', { n: REMIND_MIN })
+          : 'You will get a notification before each class, and for new homework and marks.');
+      } catch (err) {
+        console.warn('push', err);
+        // iPhone and iPad: push only works once Cartable is added to the home screen
+        if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !navigator.standalone) return C.toast('On iPhone and iPad, first add Cartable to your home screen (Share, then Add to Home Screen).');
+        if (hasAccount()) return C.toast('Notifications could not be turned on. Try again later.');
+      }
+    }
     store.set('cartable.remind', true);
     syncRemindButton();
     C.toast(t('You will get a reminder {n} minutes before each class while Cartable is open.', { n: REMIND_MIN }));
@@ -661,7 +719,7 @@
   let coursesLoadedAt = Date.now();
   async function checkReminders() {
     syncRemindButton();
-    if (!C.profile || !remindOn() || window.Room?.active) return;
+    if (!C.profile || !localOn() || window.Room?.active) return;
     if (Date.now() - coursesLoadedAt > 5 * 60e3) { coursesLoadedAt = Date.now(); await loadCourses(); }
     const now = Date.now();
     for (const c of C.courses) {
@@ -678,7 +736,7 @@
   setInterval(checkReminders, 30e3);
 
   // re-render dynamic views when the language changes
-  window.addEventListener('languagechange-app', () => { if (C.profile && !window.Room?.active) route(); });
+  window.addEventListener('languagechange-app', () => { if (C.profile && !window.Room?.active) route(); if (pushOn) syncPush(); });
 
   document.addEventListener('DOMContentLoaded', route);
 })();
