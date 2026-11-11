@@ -121,7 +121,7 @@
     box.innerHTML = `${head}
       ${h.files.length ? `<h3 class="sub">${t('From the teacher')}</h3>${fileList(h.files, false)}` : ''}
       ${marked ? `<div class="mark-box"><b>${esc(s.mark || t('Marked'))}</b>${s.feedback ? `<p>${esc(s.feedback)}</p>` : ''}</div>` : ''}
-      <h3 class="sub">${t(student ? 'My work' : "{name}'s work", { name: C.profile.name })}</h3>
+      <h3 class="sub">${esc(t(student ? 'My work' : "{name}'s work", { name: C.profile.name }))}</h3>
       <p class="hw-state">${esc(state)}</p>
       ${student && !marked ? `
         <form class="stack" id="work-form">
