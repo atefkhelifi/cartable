@@ -179,7 +179,7 @@
     $('#hw-more-files').addEventListener('change', async (e) => { const f = [...e.target.files]; e.target.value = ''; await uploadFiles(`/api/homework/${h.id}/files`, f); renderHwDetail(); });
     $('#hw-edit').addEventListener('click', () => openHwDialog(h));
     $('#hw-delete').addEventListener('click', async () => {
-      if (!confirm(t('Delete "{title}" and all the work handed in for it?', { title: h.title }))) return;
+      if (!(await C.sure(t('Delete “{title}”?', { title: h.title }), t('All the work students handed in for it is deleted too.')))) return;
       try { await C.api(`/api/homework/${h.id}`, { method: 'DELETE' }); hwSel = null; C.toast('Homework deleted'); showHomework(); }
       catch (err) { C.toast(err.message); }
     });
@@ -218,7 +218,7 @@
     if (dl) { e.preventDefault(); download(dl.dataset.dl, dl.dataset.name); return; }
     const rm = e.target.closest('[data-rmfile]');
     if (rm) {
-      if (!confirm(t('Delete {name}?', { name: rm.closest('li').querySelector('a').textContent }))) return;
+      if (!(await C.sure(t('Delete {name}?', { name: rm.closest('li').querySelector('a').textContent }), t('This cannot be undone.')))) return;
       try { await C.api(`/api/hwfiles/${rm.dataset.rmfile}`, { method: 'DELETE' }); renderHwDetail(); } catch (err) { C.toast(err.message); }
       return;
     }
@@ -317,7 +317,7 @@
       ${students.length ? `<ul class="stu-list">${students.map((s) => `<li class="stu-row">
           ${C.avatar(s.name)}<span class="nm">${esc(s.name)}<small>${s.lastSeen ? esc(t('Last in class {date}', { date: fmtWhen(s.lastSeen) })) : esc(t('Not in a class yet'))}</small></span>
           <span class="acts">
-            <button class="btn btn-ghost btn-sm" type="button" data-codes="${esc(s.id)}">${t('New codes')}</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-codes="${esc(s.id)}" data-name="${esc(s.name)}">${t('New codes')}</button>
             <button class="btn btn-ghost btn-sm" type="button" data-rmstu="${esc(s.id)}" data-name="${esc(s.name)}">${t('Remove')}</button>
           </span></li>`).join('')}</ul>
         <button class="btn btn-ghost btn-sm" type="button" id="codes-all">${t('New codes for everyone (and print)')}</button>`
@@ -333,7 +333,8 @@
       catch (err) { C.toast(err.message); }
     });
     $('#roster-delete').addEventListener('click', async () => {
-      if (!confirm(t('Delete the class list "{name}"? Its students, their codes, its homework and all work handed in will be deleted. Classes in the calendar stay.', { name: r.name }))) return;
+      if (!(await C.sure(t('Delete the class list “{name}”?', { name: r.name }),
+        t('Its students, their codes, its homework and all work handed in are deleted. Classes in the calendar stay.'), t('Delete list')))) return;
       try { await C.api(`/api/rosters/${r.id}`, { method: 'DELETE' }); rosterSel = null; showRosters(); } catch (err) { C.toast(err.message); }
     });
     $('#add-students').addEventListener('submit', async (e) => {
@@ -347,7 +348,9 @@
       } catch (err) { C.toast(err.message); }
     });
     $('#codes-all')?.addEventListener('click', async () => {
-      if (!confirm(t('Make new codes for every student and parent in "{name}"? The old codes will stop working.', { name: r.name }))) return;
+      if (!(await C.sure(t('New codes for everyone in “{name}”?', { name: r.name }),
+        t('Every student and parent gets a new code. The old codes stop working right away.'), t('Make new codes'),
+        { tone: 'yellow', icon: 'key', kind: 'primary' }))) return;
       const out = [];
       for (const s of students) {
         try { out.push(await C.api(`/api/students/${s.id}/codes`, { method: 'POST', body: JSON.stringify({ which: 'both' }) })); } catch {}
@@ -358,13 +361,15 @@
   $('#roster-detail').addEventListener('click', async (e) => {
     const c = e.target.closest('[data-codes]');
     if (c) {
-      if (!confirm(t('Make new codes for this student and their parent? The old codes will stop working.'))) return;
+      if (!(await C.sure(t('New codes for {name}?', { name: c.dataset.name }),
+        t('{name} and their parent get new codes. The old codes stop working right away.', { name: c.dataset.name }), t('Make new codes'),
+        { tone: 'yellow', icon: 'key', kind: 'primary' }))) return;
       try { showCodes([await C.api(`/api/students/${c.dataset.codes}/codes`, { method: 'POST', body: JSON.stringify({ which: 'both' }) })], rosters.find((x) => x.id === rosterSel)?.name); }
       catch (err) { C.toast(err.message); }
     }
     const rm = e.target.closest('[data-rmstu]');
     if (rm) {
-      if (!confirm(t('Remove {name}? Their work and codes will be deleted.', { name: rm.dataset.name }))) return;
+      if (!(await C.sure(t('Remove {name}?', { name: rm.dataset.name }), t('Their homework and codes are deleted.'), t('Remove'), { icon: 'person' }))) return;
       try { await C.api(`/api/students/${rm.dataset.rmstu}`, { method: 'DELETE' }); showRosters(); } catch (err) { C.toast(err.message); }
     }
   });

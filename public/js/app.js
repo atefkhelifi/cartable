@@ -43,6 +43,38 @@
     toastTimer = setTimeout(() => (el.hidden = true), 3200);
   };
 
+  // ---------- "are you sure?" dialog (instead of the browser's confirm box) ----------
+  // C.ask({ title, text, tone, icon, actions: [{ label, value, kind: 'ghost' | 'primary' | 'danger', focus }] })
+  // resolves to the chosen action's value, or null if closed with ×, Esc or Cancel.
+  const ASK_ICONS = {
+    trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
+    key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/>',
+    record: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.6" fill="currentColor" stroke="none"/>',
+    leave: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>',
+    repeat: '<path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h16M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4"/>',
+    eraser: '<path d="M8 20h12M5.5 14.5l8-8a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3L12 18H9z"/>',
+    person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0M17 4l4 4M21 4l-4 4"/>',
+  };
+  C.ask = ({ title, text = '', tone = 'red', icon = 'trash', actions }) => new Promise((resolve) => {
+    const d = $('#dlg-ask');
+    if (d.open) d.close();
+    d.className = `dialog dialog-sm tone-${tone}`;
+    $('#ask-icon').innerHTML = `<svg viewBox="0 0 24 24">${ASK_ICONS[icon] || ASK_ICONS.trash}</svg>`;
+    $('#ask-title').textContent = title;
+    $('#ask-text').textContent = text;
+    $('#ask-text').closest('.dlg-body').hidden = !text;
+    const list = actions || [{ label: t('Cancel'), value: '', focus: true }, { label: t('Delete'), value: 'ok', kind: 'danger' }];
+    $('#ask-actions').innerHTML = list.map((a) => `<button class="btn btn-${a.kind || 'ghost'}" value="${esc(a.value)}"${a.focus ? ' autofocus' : ''}>${esc(a.label)}</button>`).join('');
+    d.returnValue = '';
+    d.addEventListener('close', () => resolve(d.returnValue || null), { once: true });
+    d.showModal();
+  });
+  // the common case: one destructive (or important) action and Cancel
+  C.sure = async (title, text, okLabel, opts = {}) => (await C.ask({
+    title, text, tone: opts.tone || 'red', icon: opts.icon || 'trash',
+    actions: [{ label: t('Cancel'), value: '', focus: !opts.okFocus }, { label: okLabel || t('Delete'), value: 'ok', kind: opts.kind || 'danger', focus: !!opts.okFocus }],
+  })) === 'ok';
+
   C.api = async (url, opts = {}) => {
     const headers = { 'content-type': 'application/json' };
     if (C.profile?.token) headers.authorization = `Bearer ${C.profile.token}`;
@@ -371,7 +403,20 @@
     if (del) {
       const c = C.courses.find((x) => x.id === del.dataset.del);
       const sameSeries = C.courses.filter((x) => x.series === c.series).length > 1;
-      const all = sameSeries && confirm(t('Delete every week of this class?\n\nOK: delete all weeks\nCancel: delete only this day'));
+      const choice = await C.ask(sameSeries ? {
+        title: t('Delete “{title}”?', { title: c.title }),
+        text: t('This class happens every week. Delete only this day, or every week?'),
+        actions: [
+          { label: t('Cancel'), value: '', focus: true },
+          { label: t('Only this day'), value: 'one' },
+          { label: t('Every week'), value: 'all', kind: 'danger' },
+        ],
+      } : {
+        title: t('Delete “{title}”?', { title: c.title }),
+        text: t('It disappears from the calendar for everyone.'),
+      });
+      if (!choice) return;
+      const all = choice === 'all';
       try { await C.api(`/api/courses/${c.id}${all ? '?series=1' : ''}`, { method: 'DELETE' }); C.toast('Class deleted'); await loadCourses(); renderCalendar(); }
       catch (err) { C.toast(err.message); }
     }
@@ -414,7 +459,21 @@
       if (editing) {
         // A new date only applies to this day; otherwise ask about the other weeks.
         const weeks = C.courses.filter((x) => x.series === editing.series).length;
-        const all = weeks > 1 && body.date === editing.date && confirm(t('Change every week of this class?\n\nOK: change all weeks\nCancel: change only this day'));
+        let all = false;
+        if (weeks > 1 && body.date === editing.date) {
+          const choice = await C.ask({
+            title: t('Change every week?'),
+            text: t('“{title}” happens every week. Save the changes for this day only, or for every week?', { title: editing.title }),
+            tone: 'blue', icon: 'repeat',
+            actions: [
+              { label: t('Cancel'), value: '' },
+              { label: t('Only this day'), value: 'one' },
+              { label: t('Every week'), value: 'all', kind: 'primary', focus: true },
+            ],
+          });
+          if (!choice) return;
+          all = choice === 'all';
+        }
         await C.api(`/api/courses/${editing.id}${all ? '?series=1' : ''}`, { method: 'PATCH', body: JSON.stringify(body) });
         dlgCourse.close();
         C.toast('Class updated');
@@ -495,7 +554,6 @@
     filesManage = !!canManage;
     $('#files-title').textContent = title ? t('Files for {title}', { title }) : t('Class files');
     $('#files-pick').hidden = !filesManage;
-    $('#files-pick').nextElementSibling.hidden = !filesManage;
     $('#file-list').innerHTML = '';
     if (!dlgFiles.open) dlgFiles.showModal();
     renderFiles();
@@ -525,7 +583,7 @@
     const b = e.target.closest('[data-del-file]');
     if (!b) return;
     const name = b.closest('li').querySelector('a').textContent;
-    if (!confirm(t('Delete {name} for everyone?', { name }))) return;
+    if (!(await C.sure(t('Delete {name}?', { name }), t('It disappears for everyone in the class.')))) return;
     try { await C.api(`/api/files/${b.dataset.delFile}`, { method: 'DELETE' }); renderFiles(); }
     catch (err) { C.toast(err.message); }
   });
