@@ -86,9 +86,10 @@
 
   const isTeacher = () => C.profile?.role === 'teacher';
   const isParent = () => C.profile?.role === 'parent';
+  const isAdmin = () => isTeacher() && C.profile?.admin === true;
   // signed in with a code (students) or as a teacher or parent: can see homework
   const hasAccount = () => !!C.profile?.token;
-  Object.assign(C, { isTeacher, isParent, hasAccount });
+  Object.assign(C, { isTeacher, isParent, isAdmin, hasAccount });
   // joinable from 10 minutes before start until the end (teachers: anytime that day)
   C.status = (c, now = new Date()) => {
     const s = at(c, c.start), e = at(c, c.end);
@@ -137,6 +138,7 @@
     $('#p-code').required = signup;
     $('#p-pass').autocomplete = signup ? 'new-password' : 'current-password';
     $('#p-pass').minLength = signup ? 8 : 0;
+    $('#btn-forgot').hidden = signup;
     $$('#auth-mode [data-auth]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.auth === authMode)));
     $('#profile-error').textContent = '';
   }
@@ -163,7 +165,7 @@
       const btn = e.submitter; if (btn) btn.disabled = true;
       try {
         const res = await C.api(`/api/auth/${authMode}`, { method: 'POST', body: JSON.stringify(body) });
-        p = { role, name: res.teacher.name, username: res.teacher.username, token: res.token };
+        p = { role, name: res.teacher.name, username: res.teacher.username, admin: res.teacher.admin, token: res.token };
       } catch (ex) { err.textContent = ex.message; return; }
       finally { if (btn) btn.disabled = false; }
       $('#p-pass').value = ''; $('#p-code').value = '';
@@ -198,11 +200,64 @@
   }
   $('#btn-signout').addEventListener('click', signOut);
 
+  // ---------- passwords ----------
+  // forgot: a one-time reset code from the school admin
+  $('#btn-forgot').addEventListener('click', () => {
+    const f = $('#reset-form');
+    f.reset();
+    f.username.value = $('#p-user').value.trim();
+    $('#reset-error').textContent = '';
+    $('#dlg-reset').showModal();
+    (f.username.value ? f.code : f.username).focus();
+  });
+  $('#reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target, btn = e.submitter;
+    $('#reset-error').textContent = '';
+    if (btn) btn.disabled = true;
+    try {
+      const res = await C.api('/api/auth/reset', { method: 'POST', body: JSON.stringify({ username: f.username.value.trim(), code: f.code.value, password: f.password.value }) });
+      $('#dlg-reset').close();
+      C.profile = { role: 'teacher', name: res.teacher.name, username: res.teacher.username, admin: res.teacher.admin, token: res.token };
+      store.set('cartable.profile', C.profile);
+      C.toast('Your new password is saved.');
+      route();
+    } catch (ex) { $('#reset-error').textContent = ex.message; }
+    finally { if (btn) btn.disabled = false; }
+  });
+  // change: signed-in teacher
+  $('#btn-password').addEventListener('click', () => {
+    const f = $('#password-form');
+    f.reset();
+    f.username.value = C.profile?.username || '';
+    $('#password-error').textContent = '';
+    $('#dlg-password').showModal();
+    f.current.focus();
+  });
+  $('#password-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target, btn = e.submitter;
+    $('#password-error').textContent = '';
+    if (btn) btn.disabled = true;
+    try {
+      await C.api('/api/auth/password', { method: 'POST', body: JSON.stringify({ current: f.current.value, password: f.password.value }) });
+      $('#dlg-password').close();
+      C.toast('Your new password is saved.');
+    } catch (ex) { $('#password-error').textContent = ex.message; }
+    finally { if (btn) btn.disabled = false; }
+  });
+
   // Check once per page load that a teacher's session is still valid.
   let sessionChecked = false;
   async function checkSession() {
     if (sessionChecked || !C.profile?.token) return true;
-    try { await C.api('/api/auth/me'); sessionChecked = true; return true; }
+    try {
+      const me = await C.api('/api/auth/me');
+      sessionChecked = true;
+      // an admin may have changed this teacher's role since the last visit
+      if (me.teacher && me.teacher.admin !== C.profile.admin) { C.profile.admin = me.teacher.admin; store.set('cartable.profile', C.profile); }
+      return true;
+    }
     catch {
       store.del('cartable.profile'); C.profile = null;
       C.toast('Please sign in again.');
@@ -230,9 +285,10 @@
     $('#nav-homework').hidden = !hasAccount();
     $('#nav-classes').hidden = !isTeacher();
     $('#nav-attendance').hidden = !isParent();
+    $('#nav-school').hidden = !isAdmin();
 
     if (view === 'room' && isParent()) { location.hash = '#/today'; return; }
-    const allowed = { homework: hasAccount(), classes: isTeacher(), attendance: isParent() };
+    const allowed = { homework: hasAccount(), classes: isTeacher(), attendance: isParent(), school: isAdmin() };
     if (view in allowed && !allowed[view]) { location.hash = '#/today'; return; }
     if (view === 'room' && arg) {
       $('#shell').hidden = true;

@@ -17,6 +17,7 @@ whiteboard. Students see their timetable and join with one click.
 - Whiteboard background (teacher): put a picture or a PDF worksheet behind the drawings and move through its pages. The PDF is opened in the teacher's browser with [PDF.js](https://mozilla.github.io/pdf.js/); only the current page is shared, and it is forgotten when the class ends.
 - Waiting room: students wait until the teacher lets them in. Turn it on for a class when you plan it, or during the class.
 - Chat, a big "raise hand" button, and emoji reactions
+- Chat controls (teacher): choose who can write (everyone, "students write to me only", or only the teacher), delete any message for everyone, and stop one student's messages (students signed in with a code stay stopped if they rejoin)
 - Polls and quizzes: the teacher asks a question with 2 to 6 answers (and can mark the right one), sees answers come in live, then shows the results to everyone when ready
 - Group work (breakout rooms): split the class into 2 to 8 random groups, move students between groups, and visit any group. Camera, voice and chat stay inside each group; the teacher reads every group's chat and speaks to everyone from the main room. The whiteboard stays shared.
 - Class files: the teacher shares worksheets, pictures, slides, sounds or videos (up to 10 MB each, 100 MB per class) from the calendar or during class; anyone with the class code can download them. Files are deleted with the last week of their class.
@@ -31,6 +32,11 @@ whiteboard. Students see their timetable and join with one click.
 - Classes planned for a class list show up on those students' timetables automatically. In a live class, the teacher sees who signed in with a code and who joined as a guest.
 - Homework: give homework to a class list with instructions, files and a due date. Students write an answer and add files or photos, hand in (or take it back) until it is marked. The teacher sees who handed in, late work, and gives a mark and a comment.
 - Parent view (read-only): the child's timetable, homework with marks and comments, and the live classes the child joined.
+
+**School admin**
+- The first teacher account is the school admin. Admins see every teacher account, make other admins, and delete accounts.
+- Forgotten passwords: the admin makes a one-time reset code (valid 24 hours) and gives it to the teacher, who chooses **Forgot your password?** on the sign-in page. No email server needed. Teachers can also change their own password.
+- Backups: a copy of the database every day, kept for 14 days, which admins can download from the **School** page (see [Keeping your data](#keeping-your-data)).
 
 **Timetable and calendar**
 - Month calendar with colour-coded classes
@@ -75,9 +81,33 @@ $env:TEACHER_CODE="my-secret"; npm start
 4. Share the link (or a class invite link) with your students.
 
 The free plan sleeps after 15 minutes without visitors (the first visit then takes
-about a minute) and saved classes are wiped when the server restarts. For a real
-school, switch to a paid plan and add a disk mounted at `/var/data` with
-`DATA_DIR=/var/data`.
+about a minute), and **everything is erased each time the server restarts or is
+updated**: accounts, classes, class lists, homework and files. That is fine to try
+Cartable, not for a real school. See below.
+
+### Keeping your data
+
+1. In Render, change the service to a paid plan (Starter is enough).
+2. Under **Disks**, add a disk (1 GB is plenty to start) mounted at `/var/data`.
+3. Under **Environment**, add `DATA_DIR=/var/data`.
+
+Or uncomment the `disk` part of `render.yaml`. Until a disk is set, school
+admins see a red warning on the **School** page.
+
+**Backups.** Every day Cartable copies its database to `DATA_DIR/backups` and
+keeps the last 14 copies (`BACKUP_DAYS` changes the number; `0` turns daily
+copies off). A copy on the same disk does not help if the disk is lost, so a
+school admin should download one now and then from the **School** page. Shared
+files and homework files are not in the copy. To restore: stop Cartable, replace
+`DATA_DIR/cartable.db` with the copy (and delete `cartable.db-wal` and
+`cartable.db-shm` if they exist), then start it again.
+
+**Locked out?** If no admin can sign in, run this on the server (Render: the
+**Shell** tab) to get a reset code, and make that teacher an admin:
+
+```bash
+npm run reset-code -- <username> --admin
+```
 
 Browsers only allow the camera, microphone and screen sharing on `https://` (or
 `localhost`); Render provides HTTPS automatically.
@@ -96,7 +126,7 @@ own [coturn](https://github.com/coturn/coturn) server).
 | Server | Node.js, Express, Socket.IO (signaling, chat, whiteboard sync) |
 | Video | WebRTC mesh: each person connects directly to everyone else (or LiveKit, optional) |
 | Frontend | Plain HTML, CSS and JavaScript, no build step |
-| Storage | SQLite file `data/cartable.db` (teachers, class lists, classes, homework, attendance) and files in `data/files/` |
+| Storage | SQLite file `data/cartable.db` (teachers, class lists, classes, homework, attendance), files in `data/files/`, daily copies in `data/backups/` |
 
 A mesh works well for a class of about 10–16 people.
 

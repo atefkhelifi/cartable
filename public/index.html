@@ -55,6 +55,7 @@
             <span>Password</span>
             <input id="p-pass" type="password" maxlength="200" autocomplete="current-password">
           </label>
+          <button class="link-btn" type="button" id="btn-forgot">Forgot your password?</button>
           <label class="field" id="school-code-field" hidden>
             <span>School code</span>
             <input id="p-code" type="password" autocomplete="off" placeholder="Given by your school">
@@ -93,6 +94,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
         <span>Calendar</span>
       </a>
+      <a class="rail-link" href="#/school" data-nav="school" id="nav-school" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10l9-5 9 5-9 5z"/><path d="M7 12.5V17c0 1.5 2.2 3 5 3s5-1.5 5-3v-4.5M21 10v5"/></svg>
+        <span>School</span>
+      </a>
       <div class="rail-spacer"></div>
       <div class="lang-switch" role="group" aria-label="Language"><button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="fr" aria-pressed="false">FR</button><button type="button" data-lang="ar" aria-pressed="false" aria-label="العربية" lang="ar">ع</button></div>
       <button class="rail-link" id="btn-remind" type="button" aria-pressed="false" title="Get a notification 5 minutes before each class while Cartable is open">
@@ -100,6 +105,10 @@
         <span>Reminders</span>
       </button>
       <div class="me-chip" id="me-chip"></div>
+      <button class="rail-link teacher-only" id="btn-password" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg>
+        <span>Password</span>
+      </button>
       <button class="rail-link" id="btn-signout" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>
         <span>Switch user</span>
@@ -191,6 +200,27 @@
         <header class="page-head"><div><h1>Attendance</h1><p class="muted" id="att-sub"></p></div></header>
         <section class="panel"><ul class="att-list" id="my-att-list"></ul></section>
       </section>
+
+      <!-- SCHOOL (admin) -->
+      <section id="view-school" class="view" hidden>
+        <header class="page-head">
+          <div><h1>School</h1><p class="muted">Teacher accounts, and copies of everything saved in Cartable.</p></div>
+        </header>
+        <div class="school-grid">
+          <section class="panel">
+            <h2>Teachers</h2>
+            <p class="muted small">New teachers sign up with the school code. If one forgets their password, give them a reset code.</p>
+            <ul class="stu-list" id="teacher-list"></ul>
+          </section>
+          <section class="panel stack">
+            <h2>Backups</h2>
+            <p class="warn-note" id="data-warn" hidden>This server has no disk. Accounts, classes and files are erased each time it restarts or is updated. Add a disk and set DATA_DIR (see the README), or download a backup often.</p>
+            <p class="muted small" id="backup-sub"></p>
+            <ul class="file-list" id="backup-list"></ul>
+            <div class="row"><button class="btn btn-ghost" type="button" id="btn-backup">Make a backup now</button></div>
+          </section>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -230,7 +260,15 @@
         </div>
 
         <div class="tab-panel" id="tab-chat">
+          <label class="chat-mode teacher-only"><span>Who can write</span>
+            <select id="chat-mode">
+              <option value="all">Everyone</option>
+              <option value="teacher">Students write to me only</option>
+              <option value="off">Only me</option>
+            </select>
+          </label>
           <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
+          <p class="chat-note" id="chat-note" hidden></p>
           <form class="chat-form" id="chat-form">
             <input id="chat-input" maxlength="500" autocomplete="off" placeholder="Write a message" aria-label="Message">
             <button class="btn btn-primary btn-sm" type="submit">Send</button>
@@ -563,6 +601,73 @@
       </header>
       <div class="dlg-body"><ul class="att-list" id="att-list"></ul></div>
       <footer class="dlg-foot"><button class="btn btn-primary" type="button" data-close>Done</button></footer>
+    </div>
+  </dialog>
+
+  <!-- ========== FORGOT PASSWORD (teacher uses a reset code) ========== -->
+  <dialog id="dlg-reset" class="dialog dialog-sm tone-yellow" aria-labelledby="reset-title">
+    <form class="dlg" id="reset-form">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg></span>
+          <div><h2 id="reset-title">Choose a new password</h2><p>Ask your school's Cartable admin for a reset code. It works once, for 24 hours.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body stack">
+        <label class="field"><span>Username</span><input name="username" required maxlength="30" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+        <label class="field"><span>Reset code</span><input name="code" required maxlength="20" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" placeholder="abcde-23456"></label>
+        <label class="field"><span>New password</span><input name="password" type="password" required minlength="8" maxlength="200" autocomplete="new-password"><small class="muted">At least 8 characters.</small></label>
+        <p class="form-error" id="reset-error" role="alert"></p>
+      </div>
+      <footer class="dlg-foot">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit">Save and sign in</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ========== CHANGE PASSWORD (signed-in teacher) ========== -->
+  <dialog id="dlg-password" class="dialog dialog-sm tone-blue" aria-labelledby="pw-title">
+    <form class="dlg" id="password-form">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
+          <div><h2 id="pw-title">Change your password</h2><p>You stay signed in here. Other computers and phones are signed out.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body stack">
+        <input type="text" name="username" autocomplete="username" hidden>
+        <label class="field"><span>Current password</span><input name="current" type="password" required maxlength="200" autocomplete="current-password"></label>
+        <label class="field"><span>New password</span><input name="password" type="password" required minlength="8" maxlength="200" autocomplete="new-password"><small class="muted">At least 8 characters.</small></label>
+        <p class="form-error" id="password-error" role="alert"></p>
+      </div>
+      <footer class="dlg-foot">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit">Change password</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ========== RESET CODE (shown once to the admin) ========== -->
+  <dialog id="dlg-resetcode" class="dialog dialog-sm tone-green" aria-labelledby="rc-title">
+    <div class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg></span>
+          <div><h2 id="rc-title">Reset code</h2><p id="rc-sub"></p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body stack">
+        <code class="big-code" id="rc-code"></code>
+        <p class="small" id="rc-how"></p>
+      </div>
+      <footer class="dlg-foot">
+        <button class="btn btn-ghost" type="button" id="rc-copy">Copy</button>
+        <button class="btn btn-primary" type="button" data-close autofocus>Done</button>
+      </footer>
     </div>
   </dialog>
 
