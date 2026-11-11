@@ -481,7 +481,9 @@
   $('#btn-share').addEventListener('click', toggleShare);
   $('#btn-rec').addEventListener('click', () => (rec ? stopRecording() : startRecording()));
   $('#btn-leave').addEventListener('click', () => R.leave());
-  $('#btn-end').addEventListener('click', () => { if (confirm(tr('End the class for everyone?'))) socket.emit('teacher', { action: 'end' }); });
+  $('#btn-end').addEventListener('click', async () => {
+    if (await C.sure(tr('End the class for everyone?'), tr('Everyone leaves the live class now.'), tr('End for all'), { icon: 'leave' })) socket?.emit('teacher', { action: 'end' });
+  });
   $('#btn-side').addEventListener('click', () => $('#side').classList.toggle('open'));
   $('#btn-files').addEventListener('click', () => C.openFiles(code, course?.title, myRole === 'teacher'));
   $('#btn-copy-link').addEventListener('click', async () => { await navigator.clipboard?.writeText(C.inviteLink(code)).catch(() => {}); C.toast('Invite link copied'); });
@@ -527,7 +529,9 @@
   async function startRecording() {
     if (myRole !== 'teacher' || rec) return;
     if (!window.MediaRecorder || !navigator.mediaDevices?.getDisplayMedia) return C.toast('Recording is not supported in this browser. Use Chrome or Edge on a computer.');
-    if (!confirm(tr('Everyone in the class will see that it is being recorded. The video is saved on this computer only.\n\nStart recording?'))) return;
+    if (!(await C.sure(tr('Record this class?'), tr('Everyone in the class sees a Recording badge. The video is saved on this computer only.'),
+      tr('Start recording'), { icon: 'record', kind: 'primary', okFocus: true }))) return;
+    if (!R.active || rec) return;
     C.toast('Choose this tab and turn on tab audio so students can be heard in the recording.');
     let display;
     try {
@@ -654,9 +658,10 @@
     const s = e.target.closest('[data-move]'); if (!s) return;
     socket.emit('teacher', { action: 'breakout-move', target: s.dataset.move, group: s.value === '' ? null : +s.value });
   });
-  $('#people-list').addEventListener('click', (e) => {
+  $('#people-list').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return;
-    if (b.dataset.a === 'remove' && !confirm(tr('Remove {name} from the class?', { name: peers.get(b.dataset.id)?.info.name }))) return;
+    if (b.dataset.a === 'remove' && !(await C.sure(tr('Remove {name} from the class?', { name: peers.get(b.dataset.id)?.info.name }),
+      tr('They leave the live class now. They can come back with the class link unless you lock the class.'), tr('Remove'), { icon: 'person' }))) return;
     socket.emit('teacher', { action: b.dataset.a, target: b.dataset.id });
   });
   $$('[data-t]').forEach((b) => b.addEventListener('click', async () => {
@@ -669,7 +674,7 @@
       } catch (err) { C.toast(err.message); }
       return;
     }
-    if (a === 'clear-board' && !confirm(tr('Clear the whiteboard for everyone?'))) return;
+    if (a === 'clear-board' && !(await C.sure(tr('Clear the whiteboard for everyone?'), tr('Everything drawn on it is erased.'), tr('Clear'), { icon: 'eraser' }))) return;
     socket.emit('teacher', { action: a });
     if (a === 'mute-all') C.toast('Everyone is muted');
   }));

@@ -376,25 +376,44 @@
   </section>
 
   <!-- ========== PRE-JOIN ========== -->
-  <dialog id="dlg-prejoin" class="dialog">
-    <form method="dialog" class="stack" id="prejoin-form">
-      <h2 id="prejoin-title">Ready to join?</h2>
-      <div class="prejoin-preview"><video id="prejoin-video" autoplay playsinline muted></video><p id="prejoin-nocam" class="muted" hidden>No camera found. You can still join with your voice or chat.</p></div>
-      <div class="row">
-        <label class="check"><input type="checkbox" id="pj-mic" checked> Microphone on</label>
-        <label class="check"><input type="checkbox" id="pj-cam" checked> Camera on</label>
+  <dialog id="dlg-prejoin" class="dialog tone-yellow" aria-labelledby="prejoin-title">
+    <form method="dialog" class="dlg" id="prejoin-form">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="M16 10l5-3v10l-5-3"/></svg></span>
+          <div><h2 id="prejoin-title">Ready to join?</h2><p>Check your camera and microphone, then go in.</p></div>
+        </div>
+        <button class="dlg-x" value="cancel" type="submit" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body">
+        <div class="prejoin-preview"><video id="prejoin-video" autoplay playsinline muted></video><p id="prejoin-nocam" hidden>No camera found. You can still join with your voice or chat.</p></div>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="pj-mic" checked><span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path class="slash" d="M4 4l16 16"/></svg>
+            <b>Microphone</b><i class="t-on">On</i><i class="t-off">Off</i></span></label>
+          <label class="toggle"><input type="checkbox" id="pj-cam" checked><span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="M16 10l5-3v10l-5-3"/><path class="slash" d="M4 4l16 16"/></svg>
+            <b>Camera</b><i class="t-on">On</i><i class="t-off">Off</i></span></label>
+        </div>
       </div>
-      <div class="row end">
+      <footer class="dlg-foot">
         <button class="btn btn-ghost" value="cancel" type="submit">Not now</button>
-        <button class="btn btn-primary" value="join" type="submit">Join class</button>
-      </div>
+        <button class="btn btn-primary" value="join" type="submit" autofocus>Join class</button>
+      </footer>
     </form>
   </dialog>
 
   <!-- ========== NEW COURSE ========== -->
-  <dialog id="dlg-course" class="dialog">
-    <form id="course-form" class="stack">
-      <h2 id="course-dlg-title">Plan a class</h2>
+  <dialog id="dlg-course" class="dialog tone-blue" aria-labelledby="course-dlg-title">
+    <form id="course-form" class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/></svg></span>
+          <div><h2 id="course-dlg-title">Plan a class</h2><p>It goes in the calendar, and on the timetable of everyone on the class list.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body">
       <label class="field"><span>Title</span><input name="title" required maxlength="80" placeholder="e.g. Fractions with pizza"></label>
       <div class="row">
         <label class="field"><span>Subject</span>
@@ -433,74 +452,133 @@
       <label class="field"><span>What to bring (optional)</span><textarea name="notes" rows="2" maxlength="500" placeholder="e.g. A pencil, coloured paper and scissors"></textarea></label>
       <label class="check"><input type="checkbox" name="waitingRoom"> Students wait until I let them in</label>
       <p class="form-error" id="course-error" role="alert"></p>
-      <div class="row end">
+      </div>
+      <footer class="dlg-foot">
         <button class="btn btn-ghost" type="button" data-close>Cancel</button>
         <button class="btn btn-primary" type="submit" id="course-submit">Add to calendar</button>
-      </div>
+      </footer>
     </form>
   </dialog>
 
   <!-- ========== JOIN BY CODE ========== -->
-  <dialog id="dlg-code" class="dialog dialog-sm">
-    <form id="code-form" class="stack">
-      <h2>Join with a code</h2>
-      <label class="field"><span>Class code</span><input id="code-input" required placeholder="abc-def-ghi" autocomplete="off"></label>
-      <div class="row end">
+  <dialog id="dlg-code" class="dialog dialog-sm tone-yellow" aria-labelledby="code-dlg-title">
+    <form id="code-form" class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg></span>
+          <div><h2 id="code-dlg-title">Join with a code</h2><p>Type the code from your teacher, or paste the class link.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body">
+        <label class="field"><span>Class code</span><input id="code-input" class="code-input" required placeholder="abc-def-ghi" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+      </div>
+      <footer class="dlg-foot">
         <button class="btn btn-ghost" type="button" data-close>Cancel</button>
         <button class="btn btn-primary" type="submit">Join</button>
-      </div>
+      </footer>
     </form>
   </dialog>
 
   <!-- ========== HOMEWORK FORM ========== -->
-  <dialog id="dlg-hw" class="dialog">
-    <form id="hw-form" class="stack">
-      <h2 id="hw-dlg-title">Give homework</h2>
-      <label class="field"><span>Class list</span><select name="rosterId" id="hw-roster" required></select></label>
-      <label class="field"><span>Title</span><input name="title" maxlength="100" required placeholder="e.g. Fractions worksheet"></label>
-      <label class="field"><span>Instructions</span><textarea name="instructions" rows="5" maxlength="4000" placeholder="e.g. Do page 12, then draw your favourite fraction."></textarea></label>
-      <label class="field"><span>Due date</span><input type="date" name="due" required></label>
-      <label class="field" id="hw-attach-field"><span>Attach files (optional)</span><input type="file" id="hw-attach" multiple></label>
-      <p class="form-error" id="hw-error" role="alert"></p>
-      <div class="row end">
+  <dialog id="dlg-hw" class="dialog tone-purple" aria-labelledby="hw-dlg-title">
+    <form id="hw-form" class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M9 11h6M9 15h6M9 7h4"/></svg></span>
+          <div><h2 id="hw-dlg-title">Give homework</h2><p>Students on the class list find it on their Homework page.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body">
+        <div class="row">
+          <label class="field"><span>Class list</span><select name="rosterId" id="hw-roster" required></select></label>
+          <label class="field"><span>Due date</span><input type="date" name="due" required></label>
+        </div>
+        <label class="field"><span>Title</span><input name="title" maxlength="100" required placeholder="e.g. Fractions worksheet"></label>
+        <label class="field"><span>Instructions</span><textarea name="instructions" rows="5" maxlength="4000" placeholder="e.g. Do page 12, then draw your favourite fraction."></textarea></label>
+        <label class="field" id="hw-attach-field"><span>Attach files (optional)</span><input type="file" id="hw-attach" multiple></label>
+        <p class="form-error" id="hw-error" role="alert"></p>
+      </div>
+      <footer class="dlg-foot">
         <button class="btn btn-ghost" type="button" data-close>Cancel</button>
         <button class="btn btn-primary" type="submit" id="hw-submit">Give homework</button>
-      </div>
+      </footer>
     </form>
   </dialog>
 
   <!-- ========== NEW CODES (shown once) ========== -->
-  <dialog id="dlg-codes" class="dialog">
-    <div class="stack">
-      <h2>Sign-in codes</h2>
-      <p class="muted">These codes are shown only now. Print the cards or write them down. You can make new codes later if one is lost.</p>
-      <div class="code-cards" id="code-cards"></div>
-      <div class="row end">
-        <button class="btn btn-ghost" type="button" data-close>Close</button>
-        <button class="btn btn-primary" type="button" id="codes-print">Print cards</button>
+  <dialog id="dlg-codes" class="dialog tone-green" aria-labelledby="codes-dlg-title">
+    <div class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16a3.4 3.4 0 0 1 6.4 0M14 10h4M14 13.5h3"/></svg></span>
+          <div><h2 id="codes-dlg-title">Sign-in codes</h2><p>Shown only this once. Print the cards now; you can make new codes later if one is lost.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body">
+        <div class="code-cards" id="code-cards"></div>
       </div>
+      <footer class="dlg-foot">
+        <button class="btn btn-ghost" type="button" data-close>Close</button>
+        <button class="btn btn-primary" type="button" id="codes-print" autofocus>Print cards</button>
+      </footer>
     </div>
   </dialog>
   <div id="print-cards" class="print-only" aria-hidden="true"></div>
 
   <!-- ========== CLASS FILES ========== -->
-  <dialog id="dlg-files" class="dialog dialog-sm">
-    <div class="stack">
-      <h2 id="files-title">Class files</h2>
-      <label class="btn btn-primary teacher-only" id="files-pick">Share a file…<input type="file" id="files-input" multiple hidden></label>
-      <p class="muted small teacher-only">PDF, pictures, office documents, sounds or videos, up to 10 MB each.</p>
-      <ul class="file-list" id="file-list"></ul>
-      <div class="row end"><button class="btn btn-ghost" type="button" data-close>Close</button></div>
+  <dialog id="dlg-files" class="dialog dialog-sm tone-orange" aria-labelledby="files-title">
+    <div class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.4 3.4 0 0 1 4.8 4.8l-8.1 8.1a1.7 1.7 0 0 1-2.4-2.4l7.4-7.4"/></svg></span>
+          <div><h2 id="files-title">Class files</h2><p>Worksheets, pictures and slides for this class.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body">
+        <label class="drop teacher-only" id="files-pick">
+          <input type="file" id="files-input" multiple hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <b>Share a file…</b>
+          <small>PDF, pictures, office documents, sounds or videos, up to 10 MB each.</small>
+        </label>
+        <ul class="file-list" id="file-list"></ul>
+      </div>
+      <footer class="dlg-foot"><button class="btn btn-ghost" type="button" data-close>Close</button></footer>
     </div>
   </dialog>
 
   <!-- ========== ATTENDANCE ========== -->
-  <dialog id="dlg-attendance" class="dialog dialog-sm">
-    <div class="stack">
-      <h2>Attendance</h2>
-      <ul class="att-list" id="att-list"></ul>
-      <div class="row end"><button class="btn btn-primary" type="button" data-close>Done</button></div>
+  <dialog id="dlg-attendance" class="dialog dialog-sm tone-blue" aria-labelledby="att-dlg-title">
+    <div class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></svg></span>
+          <div><h2 id="att-dlg-title">Attendance</h2><p>Who came into this class, newest first.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body"><ul class="att-list" id="att-list"></ul></div>
+      <footer class="dlg-foot"><button class="btn btn-primary" type="button" data-close>Done</button></footer>
     </div>
+  </dialog>
+
+  <!-- ========== ARE YOU SURE? (C.ask) ========== -->
+  <dialog id="dlg-ask" class="dialog dialog-sm tone-red" aria-labelledby="ask-title" aria-describedby="ask-text">
+    <form method="dialog" class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" id="ask-icon" aria-hidden="true"></span>
+          <div><h2 id="ask-title"></h2></div>
+        </div>
+        <button class="dlg-x" value="" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body"><p class="ask-text" id="ask-text"></p></div>
+      <footer class="dlg-foot" id="ask-actions"></footer>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
