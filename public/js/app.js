@@ -32,7 +32,8 @@
   // why a teacher gives a star ("bon point"); the server keeps the key
   C.STARS = { answer: 'Good answer', help: 'Helping others', effort: 'Hard work', listen: 'Good listening', idea: 'Great idea' };
   C.initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-  const AV_COLORS = ['#2F6FED', '#2BA36B', '#8B5CF6', '#F0584A', '#F29E1F', '#0E9AA7'];
+  // dark enough for white initials (WCAG AA)
+  const AV_COLORS = ['#2A62D6', '#1B7A4F', '#7446E8', '#CF3A2C', '#A86300', '#0A7C86'];
   C.avColor = (n) => AV_COLORS[[...String(n)].reduce((a, c) => a + c.charCodeAt(0), 0) % AV_COLORS.length];
   C.avatar = (n) => `<span class="avatar" style="background:${C.avColor(n)}" aria-hidden="true">${esc(C.initials(n))}</span>`;
 

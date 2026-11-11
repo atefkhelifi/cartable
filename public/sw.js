@@ -1,7 +1,7 @@
 /* Cartable service worker: makes the app installable, opens without a network,
    and shows notifications (new homework, marks, classes about to start). */
-const CACHE = 'cartable-v1';
-const SHELL = ['/', '/css/app.css', '/js/i18n.js', '/js/app.js', '/js/room.js', '/js/school.js', '/manifest.webmanifest', '/icons/icon-192.png'];
+const CACHE = 'cartable-v2';
+const SHELL = ['/', '/css/app.css', '/css/fonts.css', '/js/i18n.js', '/js/app.js', '/js/room.js', '/js/school.js', '/manifest.webmanifest', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -17,7 +17,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
   e.respondWith(fetch(e.request).then((res) => {
-    if (res.ok && (SHELL.includes(url.pathname) || url.pathname.startsWith('/icons/'))) {
+    if (res.ok && (SHELL.includes(url.pathname) || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/fonts/'))) {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
     }

@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy · Cartable</title>
   <meta name="description" content="What Cartable keeps about teachers, students and parents, for how long, and who sees it.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Baloo+Bhaijaan+2:wght@500;600;700&family=Fredoka:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/fonts.css">
   <link rel="stylesheet" href="/css/app.css">
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#1B2A4A">
@@ -81,8 +79,8 @@
 
       <h2>Other services Cartable uses</h2>
       <ul>
-        <li>Fonts come from Google Fonts, and Google helps browsers find each other for video. Both see your internet address.</li>
-        <li>Some tools load from jsDelivr (opening a PDF on the whiteboard, and the video server library when the school uses one).</li>
+        <li>Google's connection servers help browsers find each other for video. They see your internet address, not the video.</li>
+        <li>Some tools load from jsDelivr and cdnjs (opening a PDF on the whiteboard, and the video server library when the school uses one).</li>
         <li>Notifications are delivered by your browser's push service (Google, Mozilla, Apple or Microsoft). They are encrypted, so these services cannot read them.</li>
         <li>Live captions: when the teacher turns them on, the teacher's browser sends the teacher's voice to its speech service (Google for Chrome, Microsoft for Edge, Apple for Safari). Students' voices are never captioned.</li>
         <li>The company hosting the school's Cartable server.</li>
@@ -133,8 +131,8 @@
 
       <h2>Autres services utilisés par Cartable</h2>
       <ul>
-        <li>Les polices viennent de Google Fonts, et Google aide les navigateurs à se trouver pour la vidéo. Les deux voient votre adresse internet.</li>
-        <li>Certains outils sont chargés depuis jsDelivr (ouvrir un PDF sur le tableau, et la bibliothèque du serveur vidéo si l'école en utilise un).</li>
+        <li>Les serveurs de connexion de Google aident les navigateurs à se trouver pour la vidéo. Ils voient votre adresse internet, pas la vidéo.</li>
+        <li>Certains outils sont chargés depuis jsDelivr et cdnjs (ouvrir un PDF sur le tableau, et la bibliothèque du serveur vidéo si l'école en utilise un).</li>
         <li>Les notifications passent par le service de votre navigateur (Google, Mozilla, Apple ou Microsoft). Elles sont chiffrées : ces services ne peuvent pas les lire.</li>
         <li>Sous-titres en direct : quand l'enseignant les active, son navigateur envoie sa voix à son service de reconnaissance vocale (Google pour Chrome, Microsoft pour Edge, Apple pour Safari). La voix des élèves n'est jamais sous-titrée.</li>
         <li>L'entreprise qui héberge le serveur Cartable de l'école.</li>
@@ -185,8 +183,8 @@
 
       <h2>خدمات أخرى يستعملها Cartable</h2>
       <ul>
-        <li>تأتي الخطوط من Google Fonts، وتساعد Google المتصفحات على إيجاد بعضها من أجل الفيديو. كلاهما يرى عنوانك على الإنترنت.</li>
-        <li>بعض الأدوات تُحمَّل من jsDelivr (فتح ملف PDF على السبورة، ومكتبة خادم الفيديو إن كانت المدرسة تستعمله).</li>
+        <li>تساعد خوادم الاتصال التابعة لـGoogle المتصفحات على إيجاد بعضها من أجل الفيديو. ترى عنوانك على الإنترنت، لا الفيديو.</li>
+        <li>بعض الأدوات تُحمَّل من jsDelivr وcdnjs (فتح ملف PDF على السبورة، ومكتبة خادم الفيديو إن كانت المدرسة تستعمله).</li>
         <li>تصل الإشعارات عبر خدمة متصفحك (Google أو Mozilla أو Apple أو Microsoft). وهي مشفّرة فلا تستطيع هذه الخدمات قراءتها.</li>
         <li>الترجمة المباشرة: عندما يشغّلها المعلم، يرسل متصفحه صوته إلى خدمة التعرف على الكلام (Google في Chrome، وMicrosoft في Edge، وApple في Safari). لا تُترجم أصوات التلاميذ أبدًا.</li>
         <li>الشركة التي تستضيف خادم Cartable الخاص بالمدرسة.</li>
@@ -201,30 +199,6 @@
       <p class="contact" data-contact="للأسئلة المتعلقة بالخصوصية: {c}">للأسئلة المتعلقة بالخصوصية: مدرستك.</p>
     </article>
   </main>
-  <script>
-    (() => {
-      const read = () => { try { return localStorage.getItem('cartable.lang'); } catch { return null; } };
-      let lang = read() || (navigator.language || 'en').slice(0, 2).toLowerCase();
-      if (!['en', 'fr', 'ar'].includes(lang)) lang = 'en';
-      function show(l) {
-        lang = l;
-        document.documentElement.lang = l;
-        document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr';
-        document.querySelectorAll('.sheet').forEach((s) => (s.hidden = s.dataset.lang !== l));
-        document.querySelectorAll('[data-l]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.l === l)));
-        document.title = { en: 'Privacy', fr: 'Vie privée', ar: 'الخصوصية' }[l] + ' · Cartable';
-      }
-      document.querySelectorAll('[data-l]').forEach((b) => b.addEventListener('click', () => {
-        show(b.dataset.l);
-        try { localStorage.setItem('cartable.lang', b.dataset.l); } catch {}
-      }));
-      show(lang);
-      // the school's contact, if it set one (PRIVACY_CONTACT)
-      fetch('/api/config').then((r) => r.json()).then(({ privacyContact }) => {
-        if (!privacyContact) return;
-        document.querySelectorAll('[data-contact]').forEach((p) => { p.textContent = p.dataset.contact.replace('{c}', privacyContact); });
-      }).catch(() => {});
-    })();
-  </script>
+  <script src="/js/privacy.js"></script>
 </body>
 </html>
