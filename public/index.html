@@ -68,6 +68,7 @@
         <p class="form-error" id="profile-error" role="alert"></p>
         <button class="btn btn-primary btn-lg" type="submit">Open my timetable</button>
       </form>
+      <p class="welcome-foot"><a href="/privacy.html">How Cartable uses your data</a></p>
     </div>
   </section>
 
@@ -113,9 +114,9 @@
         <span>Notifications</span>
       </button>
       <div class="me-chip" id="me-chip"></div>
-      <button class="rail-link teacher-only" id="btn-password" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg>
-        <span>Password</span>
+      <button class="rail-link" id="btn-account" type="button" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+        <span>My account</span>
       </button>
       <button class="rail-link" id="btn-signout" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>
@@ -143,6 +144,7 @@
             <h2>Today's timetable</h2>
             <ol class="timeline" id="today-list"></ol>
           </section>
+          <section class="panel stars-panel" id="stars-panel" hidden></section>
           <section class="panel">
             <h2>Coming up this week</h2>
             <ul class="week-list" id="week-list"></ul>
@@ -256,6 +258,8 @@
       </div>
       <div class="room-head-actions">
         <span class="pill pill-group" id="group-pill" hidden></span>
+        <button class="btn btn-ghost btn-sm" id="btn-saver" type="button" aria-pressed="false" title="Use less internet: only the teacher's video and shared screens, in lower quality">Save data</button>
+        <button class="btn btn-ghost btn-sm" id="btn-cc-show" type="button" aria-pressed="true" hidden title="Show or hide the live captions">Captions</button>
         <button class="btn btn-ghost btn-sm" id="btn-files" type="button">Files</button>
         <button class="btn btn-ghost btn-sm" id="btn-copy-link" type="button">Copy invite link</button>
         <span class="pill pill-rec" id="rec-pill" hidden><i class="rec-dot" aria-hidden="true"></i><span>Recording</span></span>
@@ -269,6 +273,7 @@
         <div class="spotlight" id="spotlight" hidden></div>
         <div class="tiles" id="tiles"></div>
         <div class="reactions" id="reactions" aria-hidden="true"></div>
+        <div class="captions" id="captions" aria-live="polite" hidden><p class="cc-prev" id="cc-prev"></p><p class="cc-now"><b id="cc-name"></b> <span id="cc-text"></span></p></div>
       </div>
 
       <aside class="side" id="side">
@@ -415,6 +420,10 @@
       <button class="dock-btn teacher-only" id="btn-rec" type="button" aria-pressed="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>
         <span id="rec-label">Record</span>
+      </button>
+      <button class="dock-btn teacher-only" id="btn-cc" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.5 10.2a2.4 2.4 0 1 0 0 3.6M17 10.2a2.4 2.4 0 1 0 0 3.6"/></svg>
+        <span>Captions</span>
       </button>
       <div class="react-wrap">
         <button class="dock-btn" id="btn-react" type="button" aria-expanded="false">
@@ -644,6 +653,51 @@
       <footer class="dlg-foot">
         <button class="btn btn-ghost" type="button" data-close>Cancel</button>
         <button class="btn btn-primary" type="submit">Save and sign in</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ========== MY ACCOUNT ========== -->
+  <dialog id="dlg-account" class="dialog dialog-sm tone-blue" aria-labelledby="acc-title">
+    <div class="dlg">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>
+          <div><h2 id="acc-title">My account</h2><p id="acc-sub"></p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body">
+        <ul class="acc-list">
+          <li class="teacher-only"><div><b>Password</b><small>Change the password you sign in with.</small></div><button class="btn btn-ghost btn-sm" type="button" id="acc-password">Change</button></li>
+          <li><div><b>My data</b><small id="acc-data-text">Everything Cartable keeps about you, in one file (JSON).</small></div><button class="btn btn-ghost btn-sm" type="button" id="acc-export">Download</button></li>
+          <li><div><b>Privacy</b><small>What Cartable keeps, for how long, and who sees it.</small></div><a class="btn btn-ghost btn-sm" href="/privacy.html" target="_blank" rel="noopener">Read</a></li>
+          <li class="teacher-only acc-danger"><div><b>Delete my account</b><small>With your classes, class lists, students, homework and files.</small></div><button class="btn btn-ghost btn-sm" type="button" id="acc-delete">Delete</button></li>
+          <li class="not-teacher"><div><b>Change or delete my data</b><small>Ask your teacher: they can correct names and remove a student with all their work.</small></div></li>
+        </ul>
+      </div>
+      <footer class="dlg-foot"><button class="btn btn-primary" type="button" data-close>Done</button></footer>
+    </div>
+  </dialog>
+
+  <!-- ========== DELETE MY ACCOUNT (teacher) ========== -->
+  <dialog id="dlg-delete-account" class="dialog dialog-sm tone-red" aria-labelledby="del-acc-title">
+    <form class="dlg" id="delete-account-form">
+      <header class="dlg-head">
+        <div class="dlg-label">
+          <span class="dlg-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></span>
+          <div><h2 id="del-acc-title">Delete your account?</h2><p>Your classes, class lists, students, homework and files are deleted for good. Download your data first if you want to keep it.</p></div>
+        </div>
+        <button class="dlg-x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <div class="dlg-body stack">
+        <input type="text" name="username" autocomplete="username" hidden>
+        <label class="field"><span>Your password</span><input name="password" type="password" required maxlength="200" autocomplete="current-password"></label>
+        <p class="form-error" id="delete-account-error" role="alert"></p>
+      </div>
+      <footer class="dlg-foot">
+        <button class="btn btn-ghost" type="button" data-close autofocus>Cancel</button>
+        <button class="btn btn-danger" type="submit">Delete my account</button>
       </footer>
     </form>
   </dialog>
