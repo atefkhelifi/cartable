@@ -763,3 +763,31 @@ button.stu-row:disabled { cursor: default; }
 .chat-del svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .chat-del:hover, .chat-del:focus-visible { background: var(--red-soft); color: var(--red); outline: none; }
 .people .acts button[aria-pressed="true"] { background: var(--red-soft); color: var(--red); }
+
+/* ---------- marks (gradebook) ---------- */
+.field-inline { flex-direction: row; align-items: center; gap: .5rem; }
+.field-inline > span { white-space: nowrap; }
+.field-inline select { min-height: 40px; min-width: 160px; border: 2px solid var(--line-2); border-radius: var(--r-sm); background: var(--card); color: var(--ink); font: inherit; padding: 0 .5rem; }
+.gb-panel { padding: 0; overflow: hidden; }
+.gb-panel > .empty, .gb-panel > p { padding: 1rem 1.25rem; margin: 0; }
+.gb-scroll { overflow: auto; max-height: calc(100vh - 230px); }
+/* the gradebook is a page of squared paper: ruled rows, a red margin after the names */
+.gb { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; }
+.gb th, .gb td { border-bottom: 1px solid var(--seyes); padding: 0; height: 46px; }
+.gb thead th { position: sticky; top: 0; z-index: 2; background: var(--card); text-align: start; vertical-align: bottom; padding: .6rem .5rem .45rem; border-bottom: 2px solid var(--ink); min-width: 104px; max-width: 150px; }
+.gb-hw { display: block; font-family: var(--font-head); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb thead small { display: block; color: var(--ink-3); font-weight: 400; font-size: .78rem; }
+.gb .gb-name { position: sticky; inset-inline-start: 0; z-index: 1; background: var(--card); border-inline-end: 2px solid var(--margin); text-align: start; padding: 0 .9rem 0 .75rem; min-width: 180px; white-space: nowrap; }
+.gb thead .gb-name { z-index: 3; }
+.gb tbody .gb-name { display: flex; align-items: center; gap: .55rem; height: 46px; font-weight: 700; }
+.gb tbody .gb-name .avatar { width: 28px; height: 28px; font-size: .75rem; flex: none; }
+.gb td input { width: 100%; height: 100%; min-height: 45px; border: 0; background: transparent; padding: 0 .6rem; font: inherit; font-weight: 700; color: var(--blue); text-align: center; }
+.gb td input::placeholder { font-weight: 400; font-size: .78rem; color: var(--ink-3); }
+.gb td input:focus { outline: none; background: var(--blue-soft); box-shadow: inset 0 0 0 2px var(--blue); }
+.gb td.st-missing input::placeholder { color: var(--red); font-weight: 700; }
+.gb td.st-late input::placeholder { color: var(--orange); }
+.gb td.st-in { background: var(--blue-soft); }
+.gb td.saved { background: var(--green-soft); transition: background .3s; }
+.gb .gb-avg { font-weight: 700; text-align: center; padding: 0 .75rem; border-inline-start: 2px solid var(--line); min-width: 84px; }
+.gb tbody tr:hover .gb-name, .gb tbody tr:hover td:not(.st-in):not(.saved) { background: var(--paper); }
+@media (max-width: 600px) { .gb .gb-name { min-width: 130px; } .gb tbody .gb-name .avatar { display: none; } }

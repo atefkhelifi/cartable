@@ -48,6 +48,7 @@
     if (view === 'classes') showRosters();
     if (view === 'attendance') showAttendance();
     if (view === 'school') showSchool();
+    if (view === 'marks') showMarks();
   };
 
   // =====================================================================
@@ -479,5 +480,113 @@
     try { await C.api('/api/admin/backups', { method: 'POST' }); C.toast('Backup made.'); renderBackups(); }
     catch (err) { C.toast(err.message); }
     finally { e.target.disabled = false; }
+  });
+  // =====================================================================
+  // MARKS (teacher gradebook)
+  // =====================================================================
+  let gb = null, gbRoster = null;
+  // "15/20" or "7,5 / 10" count towards the average (as a percentage); words like "Very good" do not
+  const markValue = (m) => {
+    const x = String(m || '').match(/^\s*(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)\s*$/);
+    if (!x) return null;
+    const a = parseFloat(x[1].replace(',', '.')), b = parseFloat(x[2].replace(',', '.'));
+    return b > 0 ? (a / b) * 100 : null;
+  };
+  const average = (cells) => {
+    const v = cells.map((c) => markValue(c.mark)).filter((x) => x !== null);
+    return v.length ? `${Math.round(v.reduce((a, b) => a + b, 0) / v.length)}%` : '';
+  };
+  // what to show when there is no mark yet
+  function cellState(c, h) {
+    if (c.mark) return '';
+    if (c.submittedAt) return isLate(h.due, c.submittedAt) ? 'late' : 'in';
+    return new Date() > endOfDay(h.due) ? 'missing' : '';
+  }
+  const STATE_TEXT = { in: 'Handed in', late: 'Handed in late', missing: 'Not handed in' };
+
+  async function showMarks() {
+    let lists = [];
+    try { lists = await C.api('/api/rosters'); } catch (err) { C.toast(err.message); }
+    const sel = $('#gb-roster');
+    if (gbRoster && !lists.some((r) => r.id === gbRoster)) gbRoster = null;
+    gbRoster = gbRoster || lists[0]?.id || null;
+    sel.innerHTML = lists.map((r) => `<option value="${esc(r.id)}"${r.id === gbRoster ? ' selected' : ''}>${esc(r.name)}</option>`).join('');
+    sel.closest('.field').hidden = !lists.length;
+    $('#gb-csv').hidden = !lists.length;
+    if (!gbRoster) {
+      gb = null;
+      $('#gb-box').innerHTML = `<p class="empty">${t('Make a class list first, then give it homework. Marks show up here.')} <a href="#/classes">${t('Class lists')}</a></p>`;
+      return;
+    }
+    try { gb = await C.api(`/api/rosters/${gbRoster}/gradebook`); } catch (err) { C.toast(err.message); return; }
+    renderMarks();
+  }
+  $('#gb-roster').addEventListener('change', (e) => { gbRoster = e.target.value; showMarks(); });
+
+  function renderMarks() {
+    const box = $('#gb-box');
+    if (!gb.students.length) { box.innerHTML = `<p class="empty">${t('No students yet.')} <a href="#/classes">${t('Class lists')}</a></p>`; return; }
+    if (!gb.homework.length) { box.innerHTML = `<p class="empty">${t('No homework for this class list yet.')} <a href="#/homework">${t('Give homework')}</a></p>`; return; }
+    box.innerHTML = `<div class="gb-scroll"><table class="gb">
+      <thead><tr><th scope="col" class="gb-name">${t('Student')}</th>
+        ${gb.homework.map((h) => `<th scope="col"><span class="gb-hw" title="${esc(h.title)}">${esc(h.title)}</span><small>${esc(fmtDay(h.due))}</small></th>`).join('')}
+        <th scope="col" class="gb-avg">${t('Average')}</th></tr></thead>
+      <tbody>${gb.students.map((st, i) => `<tr>
+        <th scope="row" class="gb-name">${C.avatar(st.name)}<span>${esc(st.name)}</span></th>
+        ${st.cells.map((c, j) => {
+          const state = cellState(c, gb.homework[j]);
+          return `<td class="${state ? 'st-' + state : ''}"><input value="${esc(c.mark)}" maxlength="20" data-i="${i}" data-j="${j}"
+            aria-label="${esc(t('Mark for {name}, {title}', { name: st.name, title: gb.homework[j].title }))}"
+            placeholder="${state ? esc(t(STATE_TEXT[state])) : ''}" title="${state ? esc(t(STATE_TEXT[state])) : ''}"></td>`;
+        }).join('')}
+        <td class="gb-avg" data-avg="${i}">${esc(average(st.cells))}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="small muted">${t('Marks like 15/20 count towards the average. Changes are saved when you leave the box, and the student and their parent are told.')}</p>`;
+  }
+  async function saveMark(input) {
+    const i = +input.dataset.i, j = +input.dataset.j;
+    const st = gb.students[i], cell = st.cells[j], h = gb.homework[j];
+    const mark = input.value.trim();
+    if (mark === cell.mark) return;
+    input.disabled = true;
+    try {
+      const r = await C.api(`/api/homework/${h.id}/marks/${st.id}`, { method: 'PUT', body: JSON.stringify({ mark }) });
+      cell.mark = r.mark; cell.markedAt = r.markedAt;
+      input.value = r.mark;
+      const state = cellState(cell, h);
+      input.closest('td').className = state ? 'st-' + state : '';
+      input.placeholder = input.title = state ? t(STATE_TEXT[state]) : '';
+      $(`[data-avg="${i}"]`).textContent = average(st.cells);
+      input.closest('td').classList.add('saved');
+      setTimeout(() => input.closest('td')?.classList.remove('saved'), 1200);
+    } catch (err) { C.toast(err.message); input.value = cell.mark; }
+    finally { input.disabled = false; }
+  }
+  $('#gb-box').addEventListener('change', (e) => { if (e.target.matches('input[data-i]')) saveMark(e.target); });
+  // Enter moves down the column, like a spreadsheet
+  $('#gb-box').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !e.target.matches('input[data-i]')) return;
+    e.preventDefault();
+    const i = +e.target.dataset.i, j = e.target.dataset.j;
+    const next = $(`#gb-box input[data-i="${i + (e.shiftKey ? -1 : 1)}"][data-j="${j}"]`);
+    if (next) { next.focus(); next.select(); } else e.target.blur();
+  });
+
+  // CSV for a spreadsheet. French spreadsheets expect ";" between columns.
+  $('#gb-csv').addEventListener('click', () => {
+    if (!gb || !gb.homework.length) return C.toast('No marks to download yet.');
+    const sep = window.I18N.lang === 'fr' ? ';' : ',';
+    // a cell starting with = + - @ would run as a formula in a spreadsheet
+    const cell = (v) => { v = String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[";,\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+    const rows = [[t('Student'), ...gb.homework.map((h) => `${h.title} (${h.due})`), t('Average')]];
+    for (const st of gb.students) {
+      rows.push([st.name, ...st.cells.map((c, j) => c.mark || (cellState(c, gb.homework[j]) ? t(STATE_TEXT[cellState(c, gb.homework[j])]) : '')), average(st.cells)]);
+    }
+    const csv = '\ufeff' + rows.map((r) => r.map(cell).join(sep)).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `${t('Marks')} - ${gb.roster.name.replace(/[\\/:*?"<>|]+/g, ' ')} - ${ymd(new Date())}.csv`;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30e3);
   });
 })();

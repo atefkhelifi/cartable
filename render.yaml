@@ -25,6 +25,8 @@ services:
         generateValue: true   # keeps student and parent codes valid across deploys
       # - key: DATA_DIR
       #   value: /var/data    # with the disk above
+      - key: TZ
+        sync: false           # the school's time zone for class reminders, e.g. Europe/Paris or Africa/Tunis
       - key: BACKUP_DAYS
         value: "14"           # daily database copies to keep (0 = off)
       - key: TURN_URLS
