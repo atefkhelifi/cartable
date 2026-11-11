@@ -25,6 +25,8 @@ services:
         generateValue: true   # keeps student and parent codes valid across deploys
       # - key: DATA_DIR
       #   value: /var/data    # with the disk above
+      - key: PRIVACY_CONTACT
+        sync: false           # shown on /privacy.html, e.g. an e-mail address of the school
       - key: TZ
         sync: false           # the school's time zone for class reminders, e.g. Europe/Paris or Africa/Tunis
       - key: BACKUP_DAYS

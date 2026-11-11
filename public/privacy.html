@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy · Cartable</title>
+  <meta name="description" content="What Cartable keeps about teachers, students and parents, for how long, and who sees it.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Baloo+Bhaijaan+2:wght@500;600;700&family=Fredoka:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="icon" href="/icons/icon-192.png">
+  <style>
+    body { background: var(--paper); }
+    .privacy { max-width: 46rem; margin: 0 auto; padding: 2rem 16px 4rem; }
+    .privacy-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .privacy-top a.brand { text-decoration: none; }
+    /* a page of the school notebook: ruled lines and a red margin */
+    .sheet { background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 2rem 2rem 2rem 3.25rem; position: relative; line-height: 1.65; }
+    .sheet::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 2.1rem; border-inline-start: 2px solid var(--margin); }
+    [dir="rtl"] .sheet { padding: 2rem 3.25rem 2rem 2rem; }
+    .sheet h1 { font-family: var(--font-head); font-size: clamp(1.8rem, 5vw, 2.4rem); margin: 0 0 .25rem; line-height: 1.15; }
+    .sheet h2 { font-family: var(--font-head); font-size: 1.25rem; margin: 2rem 0 .5rem; }
+    .sheet p, .sheet li { max-width: 68ch; }
+    .sheet ul { padding-inline-start: 1.2rem; }
+    .sheet li { margin: .3rem 0; }
+    .sheet .lead { color: var(--ink-2); font-size: 1.05rem; }
+    .sheet table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+    .sheet th, .sheet td { text-align: start; vertical-align: top; padding: .55rem .5rem; border-bottom: 1px solid var(--seyes); }
+    .sheet th { font-family: var(--font-head); font-weight: 600; }
+    .contact { background: var(--yellow-soft); border-radius: var(--r-md); padding: .9rem 1rem; font-weight: 700; }
+    .table-wrap { overflow-x: auto; }
+    @media (max-width: 600px) { .sheet { padding: 1.4rem 1.1rem 1.4rem 2.1rem; } .sheet::before { inset-inline-start: 1.2rem; } [dir="rtl"] .sheet { padding: 1.4rem 2.1rem 1.4rem 1.1rem; } }
+  </style>
+</head>
+<body>
+  <main class="privacy">
+    <div class="privacy-top">
+      <a class="brand" href="/">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="26" height="19" rx="5" fill="var(--blue)"/><path d="M11 9V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3" fill="none" stroke="var(--ink)" stroke-width="2.5"/><rect x="13" y="14" width="6" height="5" rx="1.5" fill="var(--yellow)"/></svg>
+        <span>Cartable</span>
+      </a>
+      <div class="lang-switch" role="group" aria-label="Language"><button type="button" data-l="en">EN</button><button type="button" data-l="fr">FR</button><button type="button" data-l="ar" aria-label="العربية" lang="ar">ع</button></div>
+    </div>
+
+    <!-- ===================== ENGLISH ===================== -->
+    <article class="sheet" data-lang="en" lang="en" hidden>
+      <h1>Your data in Cartable</h1>
+      <p class="lead">Cartable is an online classroom your school runs. The school decides who uses it and is responsible for the data in it. This page says what Cartable keeps, for how long, and who can see it.</p>
+
+      <h2>What is kept</h2>
+      <div class="table-wrap"><table>
+        <tr><th>What</th><th>How long</th></tr>
+        <tr><td>Teachers: name, username, password (only in scrambled form), last sign-in</td><td>Until the account is deleted</td></tr>
+        <tr><td>Students on a class list: the name the teacher typed, and their sign-in codes (only in scrambled form, the teacher sees them once)</td><td>Until the teacher removes the student or the class list</td></tr>
+        <tr><td>Planned classes: title, times, notes</td><td>Until the teacher deletes them</td></tr>
+        <tr><td>Attendance: the name someone joined a live class with, and when</td><td>365 days (the school can change this)</td></tr>
+        <tr><td>Homework, answers, attached files, marks, comments and stars</td><td>Until the teacher deletes the homework, the student or the class list</td></tr>
+        <tr><td>Files shared with a class</td><td>Until the teacher deletes them, or the class</td></tr>
+        <tr><td>Notifications: the address your browser gives for notifications, if you turn them on</td><td>Until you turn them off or sign out</td></tr>
+        <tr><td>Backup copies of all of the above</td><td>14 days</td></tr>
+      </table></div>
+
+      <h2>What is not kept</h2>
+      <ul>
+        <li>Video and voice are not recorded by Cartable. They go straight between browsers (or through the school's video server, if it uses one).</li>
+        <li>Chat messages, the whiteboard, polls and live captions disappear when the class ends. The teacher can save the whiteboard into the class files.</li>
+        <li>Only the teacher can record a class. Everyone sees a "Recording" badge, and the video stays on the teacher's computer.</li>
+        <li>No advertising, no tracking, no analytics, no cookies. Your browser only remembers who is signed in, your language and your settings.</li>
+      </ul>
+
+      <h2>Who sees what</h2>
+      <ul>
+        <li><b>A teacher</b> sees their own classes, class lists, homework and marks, and who joined their classes.</li>
+        <li><b>A student</b> signed in with their code sees their timetable, their own homework, marks and stars.</li>
+        <li><b>A parent</b> sees the same as their child, and cannot join live classes.</li>
+        <li><b>A school admin</b> sees the list of teacher accounts and can download backup copies, which contain everything.</li>
+      </ul>
+
+      <h2>Other services Cartable uses</h2>
+      <ul>
+        <li>Fonts come from Google Fonts, and Google helps browsers find each other for video. Both see your internet address.</li>
+        <li>Some tools load from jsDelivr (opening a PDF on the whiteboard, and the video server library when the school uses one).</li>
+        <li>Notifications are delivered by your browser's push service (Google, Mozilla, Apple or Microsoft). They are encrypted, so these services cannot read them.</li>
+        <li>Live captions: when the teacher turns them on, the teacher's browser sends the teacher's voice to its speech service (Google for Chrome, Microsoft for Edge, Apple for Safari). Students' voices are never captioned.</li>
+        <li>The company hosting the school's Cartable server.</li>
+      </ul>
+
+      <h2>Your rights</h2>
+      <ul>
+        <li><b>See your data:</b> sign in, open <b>My account</b> and choose <b>Download</b>. Parents can download their child's data with the parent code.</li>
+        <li><b>Correct or delete it:</b> ask the teacher. They can rename a student, or remove a student with all their work. Teachers can delete their own account under <b>My account</b>.</li>
+        <li><b>Questions or complaints:</b> write to the school. In the European Union you can also contact your data protection authority.</li>
+      </ul>
+      <p class="contact" data-contact="Contact for privacy questions: {c}">Contact for privacy questions: your school.</p>
+    </article>
+
+    <!-- ===================== FRANÇAIS ===================== -->
+    <article class="sheet" data-lang="fr" lang="fr" hidden>
+      <h1>Vos données dans Cartable</h1>
+      <p class="lead">Cartable est une classe en ligne gérée par votre école. L'école décide qui l'utilise et elle est responsable des données qu'elle contient. Cette page dit ce que Cartable garde, combien de temps, et qui peut le voir.</p>
+
+      <h2>Ce qui est gardé</h2>
+      <div class="table-wrap"><table>
+        <tr><th>Quoi</th><th>Combien de temps</th></tr>
+        <tr><td>Enseignants : nom, nom d'utilisateur, mot de passe (uniquement sous forme brouillée), dernière connexion</td><td>Jusqu'à la suppression du compte</td></tr>
+        <tr><td>Élèves d'une liste de classe : le prénom tapé par l'enseignant, et leurs codes de connexion (uniquement sous forme brouillée, l'enseignant les voit une seule fois)</td><td>Jusqu'à ce que l'enseignant retire l'élève ou la liste</td></tr>
+        <tr><td>Cours prévus : titre, horaires, notes</td><td>Jusqu'à ce que l'enseignant les supprime</td></tr>
+        <tr><td>Présences : le nom avec lequel quelqu'un a rejoint un cours en direct, et l'heure</td><td>365 jours (l'école peut changer cette durée)</td></tr>
+        <tr><td>Devoirs, réponses, fichiers joints, notes, commentaires et bons points</td><td>Jusqu'à ce que l'enseignant supprime le devoir, l'élève ou la liste</td></tr>
+        <tr><td>Fichiers partagés avec un cours</td><td>Jusqu'à ce que l'enseignant les supprime, ou le cours</td></tr>
+        <tr><td>Notifications : l'adresse que votre navigateur donne pour les notifications, si vous les activez</td><td>Jusqu'à ce que vous les désactiviez ou vous déconnectiez</td></tr>
+        <tr><td>Copies de sauvegarde de tout ce qui précède</td><td>14 jours</td></tr>
+      </table></div>
+
+      <h2>Ce qui n'est pas gardé</h2>
+      <ul>
+        <li>La vidéo et la voix ne sont pas enregistrées par Cartable. Elles passent directement entre les navigateurs (ou par le serveur vidéo de l'école, s'il y en a un).</li>
+        <li>Les messages du chat, le tableau, les sondages et les sous-titres disparaissent à la fin du cours. L'enseignant peut garder le tableau dans les fichiers du cours.</li>
+        <li>Seul l'enseignant peut enregistrer un cours. Tout le monde voit un badge « Enregistrement », et la vidéo reste sur l'ordinateur de l'enseignant.</li>
+        <li>Pas de publicité, pas de pistage, pas de statistiques, pas de cookies. Votre navigateur retient seulement qui est connecté, votre langue et vos réglages.</li>
+      </ul>
+
+      <h2>Qui voit quoi</h2>
+      <ul>
+        <li><b>Un enseignant</b> voit ses propres cours, listes de classe, devoirs et notes, et qui a rejoint ses cours.</li>
+        <li><b>Un élève</b> connecté avec son code voit son emploi du temps, ses devoirs, ses notes et ses bons points.</li>
+        <li><b>Un parent</b> voit la même chose que son enfant, et ne peut pas rejoindre les cours en direct.</li>
+        <li><b>Un administrateur de l'école</b> voit la liste des comptes enseignants et peut télécharger les sauvegardes, qui contiennent tout.</li>
+      </ul>
+
+      <h2>Autres services utilisés par Cartable</h2>
+      <ul>
+        <li>Les polices viennent de Google Fonts, et Google aide les navigateurs à se trouver pour la vidéo. Les deux voient votre adresse internet.</li>
+        <li>Certains outils sont chargés depuis jsDelivr (ouvrir un PDF sur le tableau, et la bibliothèque du serveur vidéo si l'école en utilise un).</li>
+        <li>Les notifications passent par le service de votre navigateur (Google, Mozilla, Apple ou Microsoft). Elles sont chiffrées : ces services ne peuvent pas les lire.</li>
+        <li>Sous-titres en direct : quand l'enseignant les active, son navigateur envoie sa voix à son service de reconnaissance vocale (Google pour Chrome, Microsoft pour Edge, Apple pour Safari). La voix des élèves n'est jamais sous-titrée.</li>
+        <li>L'entreprise qui héberge le serveur Cartable de l'école.</li>
+      </ul>
+
+      <h2>Vos droits</h2>
+      <ul>
+        <li><b>Voir vos données :</b> connectez-vous, ouvrez <b>Mon compte</b> et choisissez <b>Télécharger</b>. Les parents peuvent télécharger les données de leur enfant avec le code parent.</li>
+        <li><b>Les corriger ou les supprimer :</b> demandez à l'enseignant. Il peut renommer un élève, ou retirer un élève avec tout son travail. Un enseignant peut supprimer son propre compte dans <b>Mon compte</b>.</li>
+        <li><b>Questions ou réclamations :</b> écrivez à l'école. Vous pouvez aussi contacter la CNIL (en France) ou l'autorité de protection des données de votre pays.</li>
+      </ul>
+      <p class="contact" data-contact="Contact pour les questions de vie privée : {c}">Contact pour les questions de vie privée : votre école.</p>
+    </article>
+
+    <!-- ===================== العربية ===================== -->
+    <article class="sheet" data-lang="ar" lang="ar" dir="rtl" hidden>
+      <h1>بياناتك في Cartable</h1>
+      <p class="lead">Cartable قسم دراسي على الإنترنت تديره مدرستك. المدرسة هي من تقرر من يستخدمه، وهي المسؤولة عن البيانات الموجودة فيه. توضح هذه الصفحة ما يحفظه Cartable، ولأي مدة، ومن يمكنه رؤيته.</p>
+
+      <h2>ما يتم حفظه</h2>
+      <div class="table-wrap"><table>
+        <tr><th>ماذا</th><th>إلى متى</th></tr>
+        <tr><td>المعلمون: الاسم، اسم المستخدم، كلمة المرور (بشكل مُشفَّر فقط)، آخر دخول</td><td>حتى حذف الحساب</td></tr>
+        <tr><td>تلاميذ قائمة القسم: الاسم الذي كتبه المعلم، ورموز الدخول (بشكل مُشفَّر فقط، ويراها المعلم مرة واحدة)</td><td>حتى يحذف المعلم التلميذ أو القائمة</td></tr>
+        <tr><td>الحصص المبرمجة: العنوان، المواعيد، الملاحظات</td><td>حتى يحذفها المعلم</td></tr>
+        <tr><td>الحضور: الاسم الذي دخل به الشخص إلى الحصة المباشرة، ووقت دخوله</td><td>365 يومًا (يمكن للمدرسة تغيير ذلك)</td></tr>
+        <tr><td>الواجبات، الإجابات، الملفات المرفقة، العلامات، التعليقات والنجوم</td><td>حتى يحذف المعلم الواجب أو التلميذ أو القائمة</td></tr>
+        <tr><td>الملفات المشتركة مع الحصة</td><td>حتى يحذفها المعلم، أو يحذف الحصة</td></tr>
+        <tr><td>الإشعارات: العنوان الذي يقدمه متصفحك للإشعارات، إذا شغّلتها</td><td>حتى تُوقفها أو تخرج من حسابك</td></tr>
+        <tr><td>نسخ احتياطية من كل ما سبق</td><td>14 يومًا</td></tr>
+      </table></div>
+
+      <h2>ما لا يتم حفظه</h2>
+      <ul>
+        <li>لا يسجّل Cartable الصوت والصورة. فهما ينتقلان مباشرة بين المتصفحات (أو عبر خادم الفيديو الخاص بالمدرسة إن وُجد).</li>
+        <li>تختفي رسائل الدردشة والسبورة والاستطلاعات والترجمة المباشرة عند نهاية الحصة. يمكن للمعلم حفظ السبورة في ملفات الحصة.</li>
+        <li>المعلم وحده يمكنه تسجيل الحصة. يرى الجميع شارة «تسجيل»، ويبقى الفيديو على حاسوب المعلم.</li>
+        <li>لا إعلانات، ولا تتبّع، ولا إحصاءات، ولا ملفات تعريف الارتباط. يتذكر متصفحك فقط من سجّل الدخول، ولغتك وإعداداتك.</li>
+      </ul>
+
+      <h2>من يرى ماذا</h2>
+      <ul>
+        <li><b>المعلم</b> يرى حصصه وقوائمه وواجباته وعلاماته، ومن دخل إلى حصصه.</li>
+        <li><b>التلميذ</b> الذي دخل برمزه يرى جدوله وواجباته وعلاماته ونجومه.</li>
+        <li><b>وليّ الأمر</b> يرى ما يراه طفله، ولا يمكنه الدخول إلى الحصص المباشرة.</li>
+        <li><b>مسؤول المدرسة</b> يرى قائمة حسابات المعلمين ويمكنه تنزيل النسخ الاحتياطية التي تحتوي على كل شيء.</li>
+      </ul>
+
+      <h2>خدمات أخرى يستعملها Cartable</h2>
+      <ul>
+        <li>تأتي الخطوط من Google Fonts، وتساعد Google المتصفحات على إيجاد بعضها من أجل الفيديو. كلاهما يرى عنوانك على الإنترنت.</li>
+        <li>بعض الأدوات تُحمَّل من jsDelivr (فتح ملف PDF على السبورة، ومكتبة خادم الفيديو إن كانت المدرسة تستعمله).</li>
+        <li>تصل الإشعارات عبر خدمة متصفحك (Google أو Mozilla أو Apple أو Microsoft). وهي مشفّرة فلا تستطيع هذه الخدمات قراءتها.</li>
+        <li>الترجمة المباشرة: عندما يشغّلها المعلم، يرسل متصفحه صوته إلى خدمة التعرف على الكلام (Google في Chrome، وMicrosoft في Edge، وApple في Safari). لا تُترجم أصوات التلاميذ أبدًا.</li>
+        <li>الشركة التي تستضيف خادم Cartable الخاص بالمدرسة.</li>
+      </ul>
+
+      <h2>حقوقك</h2>
+      <ul>
+        <li><b>الاطلاع على بياناتك:</b> سجّل الدخول، وافتح <b>حسابي</b> واختر <b>تنزيل</b>. يمكن لولي الأمر تنزيل بيانات طفله برمز وليّ الأمر.</li>
+        <li><b>تصحيحها أو حذفها:</b> اطلب ذلك من المعلم. يمكنه تغيير اسم التلميذ، أو حذفه مع كل أعماله. ويمكن للمعلم حذف حسابه من <b>حسابي</b>.</li>
+        <li><b>أسئلة أو شكاوى:</b> راسل المدرسة. ويمكنك أيضًا التواصل مع هيئة حماية المعطيات الشخصية في بلدك.</li>
+      </ul>
+      <p class="contact" data-contact="للأسئلة المتعلقة بالخصوصية: {c}">للأسئلة المتعلقة بالخصوصية: مدرستك.</p>
+    </article>
+  </main>
+  <script>
+    (() => {
+      const read = () => { try { return localStorage.getItem('cartable.lang'); } catch { return null; } };
+      let lang = read() || (navigator.language || 'en').slice(0, 2).toLowerCase();
+      if (!['en', 'fr', 'ar'].includes(lang)) lang = 'en';
+      function show(l) {
+        lang = l;
+        document.documentElement.lang = l;
+        document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr';
+        document.querySelectorAll('.sheet').forEach((s) => (s.hidden = s.dataset.lang !== l));
+        document.querySelectorAll('[data-l]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.l === l)));
+        document.title = { en: 'Privacy', fr: 'Vie privée', ar: 'الخصوصية' }[l] + ' · Cartable';
+      }
+      document.querySelectorAll('[data-l]').forEach((b) => b.addEventListener('click', () => {
+        show(b.dataset.l);
+        try { localStorage.setItem('cartable.lang', b.dataset.l); } catch {}
+      }));
+      show(lang);
+      // the school's contact, if it set one (PRIVACY_CONTACT)
+      fetch('/api/config').then((r) => r.json()).then(({ privacyContact }) => {
+        if (!privacyContact) return;
+        document.querySelectorAll('[data-contact]').forEach((p) => { p.textContent = p.dataset.contact.replace('{c}', privacyContact); });
+      }).catch(() => {});
+    })();
+  </script>
+</body>
+</html>

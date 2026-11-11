@@ -72,7 +72,8 @@
     $('#room-name').textContent = course?.title || tr('Live class');
     $('#room-meta').textContent = [course?.subject && tr(course.subject), course?.group, tr('Code {code}', { code })].filter(Boolean).join(', ');
     $('#chat-log').innerHTML = '';
-    chatMode = 'all'; chatMuted = false;
+    chatMode = 'all'; chatMuted = false; captionsOn = false; showCC = true;
+    $('#btn-cc-show').setAttribute('aria-pressed', 'true');
     $('#tiles').innerHTML = '';
     if (audioTrack()) audioTrack().enabled = micOn;
     if (camTrack()) camTrack().enabled = camOn;
@@ -100,6 +101,7 @@
       sendState();
       chatMuted = !!res.chatMuted;
       applyFlags(res);
+      if (saver) applySaver(false);
       setRecording(res.recording, null, true);
       loadBoard(res.strokes, res.bg);
       setPoll(res.poll, true);
@@ -135,13 +137,17 @@
       if (s.id === myId) return;
       const p = peers.get(s.id); if (!p) return;
       const raised = !p.info.hand && s.hand;
+      const resend = !!p.info.saver !== !!s.saver || !!p.info.sharing !== !!s.sharing;
       p.info = { ...p.info, ...s };
       updateTile(s.id);
       renderPeople();
       if (raised) { sys(tr('{name} raised their hand ✋', { name: s.name })); if (myRole === 'teacher') C.toast(tr('{name} raised their hand', { name: s.name })); }
       updateSpotlight();
+      if (resend) { syncSenders(); lkApplySaver(); }
     });
     socket.on('signal', onSignal);
+    socket.on('caption', (m) => showCaption(m.name, m.text, m.final));
+    socket.on('star', onStar);
     socket.on('chat', onChat);
     socket.on('chat-delete', (id) => {
       const li = $(`#chat-log li[data-id="${CSS.escape(String(id))}"]`); if (!li) return;
@@ -185,7 +191,10 @@
     if (pc) {
       pc.onicecandidate = (e) => e.candidate && socket.emit('signal', { to: id, data: { candidate: e.candidate } });
       pc.ontrack = (e) => addRemoteTrack(p, e.track);
-      pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') pc.restartIce?.(); };
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'failed') pc.restartIce?.();
+        if (pc.connectionState === 'connected') tuneSender(id);
+      };
     }
     addTile(id, info, stream, false);
     applyVisibility(id);
@@ -259,6 +268,7 @@
       const p = peers.get(part.identity) || createPeer(part.identity, { name: part.name || 'Guest', role: 'student' });
       addRemoteTrack(p, track.mediaStreamTrack);
     });
+    room.on(L.RoomEvent.TrackPublished, () => lkApplySaver());
     room.on(L.RoomEvent.TrackUnsubscribed, (track, pub, part) => {
       const p = peers.get(part.identity);
       if (p) { p.stream.removeTrack(track.mediaStreamTrack); updateSpotlight(); }
@@ -271,6 +281,23 @@
     if (audioTrack()) await room.localParticipant.publishTrack(audioTrack(), { source: L.Track.Source.Microphone });
     lkVideoPub = null;
     await lkSyncVideo();
+    lkApplySaver();
+  }
+  // With LiveKit, saving data means not receiving students' cameras, and the teacher's in low quality.
+  function lkApplySaver() {
+    const L = window.LivekitClient;
+    if (!lk || !L) return;
+    for (const part of lk.remoteParticipants.values()) {
+      const info = peers.get(part.identity)?.info;
+      for (const pub of part.trackPublications.values()) {
+        if (pub.kind !== 'video') continue;
+        const want = !saver || info?.role === 'teacher' || !!info?.sharing;
+        try {
+          pub.setSubscribed(want);
+          if (want) pub.setVideoQuality(saver ? L.VideoQuality.LOW : L.VideoQuality.HIGH);
+        } catch {}
+      }
+    }
   }
   // publish whatever we show (camera or shared screen), or nothing
   async function lkSyncVideo() {
@@ -306,7 +333,24 @@
   const groupName = (g) => (g === null ? tr('Main room') : tr('Group {n}', { n: g + 1 }));
   function trackFor(id, kind) {
     if (!canSee(id)) return null;
-    return kind === 'audio' ? audioTrack() : outVideo();
+    if (kind === 'audio') return audioTrack();
+    // someone saving data only gets video from the teacher and shared screens
+    if (peers.get(id)?.info.saver && myRole !== 'teacher' && !screenTrack) return null;
+    return outVideo();
+  }
+  // Lower the quality of the video we send to one person when either of us saves data.
+  async function tuneSender(id) {
+    const tv = peers.get(id)?.pc?.getTransceivers()[1];
+    if (!tv) return;
+    try {
+      const prm = tv.sender.getParameters();
+      if (!prm.encodings?.length) return;
+      const low = saver || !!peers.get(id).info.saver;
+      const e = prm.encodings[0];
+      if (low) { e.maxBitrate = screenTrack ? 500000 : 150000; e.scaleResolutionDownBy = screenTrack ? 1 : 2; e.maxFramerate = screenTrack ? 8 : 12; }
+      else { delete e.maxBitrate; e.scaleResolutionDownBy = 1; delete e.maxFramerate; }
+      await tv.sender.setParameters(prm);
+    } catch {}
   }
   function syncSenders() {
     if (media === 'livekit') return lkSyncVideo(); // groups are separate LiveKit rooms; only camera vs screen changes here
@@ -315,7 +359,7 @@
       return Promise.all([
         ta?.sender.replaceTrack(trackFor(id, 'audio')).catch(() => {}),
         tv?.sender.replaceTrack(trackFor(id, 'video')).catch(() => {}),
-      ]);
+      ]).then(() => tuneSender(id));
     }));
   }
   function applyVisibility(id) {
@@ -388,7 +432,8 @@
   function updateTile(id) {
     const el = tileOf(id), i = infoOf(id);
     if (!el || !i) return;
-    el.classList.toggle('cam-on', !!(i.cam || i.sharing));
+    const hidden = saver && id !== 'me' && i.role !== 'teacher' && !i.sharing;
+    el.classList.toggle('cam-on', !!(i.cam || i.sharing) && !hidden);
     el.classList.toggle('hand', !!i.hand);
     el.classList.toggle('sharing', !!i.sharing);
     el.querySelector('.tile-name').innerHTML = `${i.mic === false ? MIC_OFF() : ''}<span>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</span>${i.role === 'teacher' ? `<span class="role">${tr('Teacher')}</span>` : ''}`;
@@ -449,7 +494,7 @@
 
   // ---------- controls ----------
   function setPressed(sel, v) { $(sel).setAttribute('aria-pressed', String(v)); }
-  function sendState() { socket?.emit('state', { mic: micOn, cam: camOn, hand, sharing: !!screenTrack }); updateTile('me'); renderPeople(); }
+  function sendState() { socket?.emit('state', { mic: micOn, cam: camOn, hand, sharing: !!screenTrack, saver }); updateTile('me'); renderPeople(); }
 
   function toggleMic() {
     if (!audioTrack()) return C.toast('No microphone found.');
@@ -503,6 +548,109 @@
 
   $('#btn-react').addEventListener('click', () => { const m = $('#react-menu'); m.hidden = !m.hidden; $('#btn-react').setAttribute('aria-expanded', String(!m.hidden)); });
   $('#react-menu').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') { socket.emit('react', e.target.textContent); $('#react-menu').hidden = true; } });
+  // ---------- save data ----------
+  let saver = false;
+  try { saver = localStorage.getItem('cartable.saver') === '1'; } catch {}
+  $('#btn-saver').setAttribute('aria-pressed', String(saver));
+  function applySaver(announce) {
+    $('#btn-saver').setAttribute('aria-pressed', String(saver));
+    try { localStorage.setItem('cartable.saver', saver ? '1' : '0'); } catch {}
+    if (!socket) return;
+    sendState();
+    syncSenders();
+    lkApplySaver();
+    $('.tile').forEach((t) => updateTile(t.dataset.id));
+    if (announce) C.toast(saver ? 'Saving data: you only get the teacher\'s video and shared screens, in lower quality.' : 'Saving data is off.');
+  }
+  $('#btn-saver').addEventListener('click', () => { saver = !saver; applySaver(true); });
+
+  // ---------- live captions ----------
+  // The teacher's browser turns their speech into text (Web Speech API) and Cartable shows it to the class.
+  // Only the teacher's voice is captioned: browsers send the sound to their maker's speech service.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let captionsOn = false, showCC = true, speech = null, ccTimer = null;
+  const ccLang = () => ({ en: 'en-GB', fr: 'fr-FR', ar: 'ar-TN' }[window.I18N.lang] || 'en-GB');
+  function showCaption(name, text, final) {
+    if (!captionsOn || !showCC || !text) return;
+    const box = $('#captions');
+    box.hidden = false;
+    $('#cc-name').textContent = name;
+    $('#cc-text').textContent = text;
+    if (final) { $('#cc-prev').textContent = text; }
+    clearTimeout(ccTimer);
+    ccTimer = setTimeout(() => { box.hidden = true; $('#cc-prev').textContent = ''; }, 7000);
+  }
+  function speechStart() {
+    if (speech || !SR) return;
+    const r = new SR();
+    speech = r;
+    r.lang = ccLang(); r.continuous = true; r.interimResults = true;
+    let last = 0;
+    r.onresult = (e) => {
+      if (!micOn || speech !== r) return; // a muted teacher is not captioned
+      let text = '', final = false;
+      for (let i = e.resultIndex; i < e.results.length; i++) { text += e.results[i][0].transcript; final = e.results[i].isFinal; }
+      text = text.trim();
+      if (!text || (!final && Date.now() - last < 250)) return;
+      last = Date.now();
+      socket?.emit('caption', { text, final });
+      showCaption(tr('You'), text, final);
+    };
+    r.onerror = (e) => {
+      if (e.error !== 'not-allowed' && e.error !== 'service-not-allowed' && e.error !== 'language-not-supported') return;
+      C.toast('Captions are not available in this browser. Try Chrome or Edge.');
+      speech = null;
+      socket?.emit('teacher', { action: 'captions', on: false });
+    };
+    // browsers stop listening after a silence: start again while captions are on
+    r.onend = () => { if (speech === r) setTimeout(() => { if (speech === r) try { r.start(); } catch {} }, 300); };
+    try { r.start(); } catch {}
+  }
+  function speechStop() { const r = speech; speech = null; try { r?.stop(); } catch {} }
+  function applyCaptions(on) {
+    const was = captionsOn;
+    captionsOn = !!on;
+    $('#btn-cc').setAttribute('aria-pressed', String(captionsOn));
+    $('#btn-cc-show').hidden = !captionsOn || myRole === 'teacher';
+    if (!captionsOn) { $('#captions').hidden = true; $('#cc-prev').textContent = ''; }
+    if (myRole === 'teacher') (captionsOn ? speechStart : speechStop)();
+    if (was !== captionsOn && R.active && myId) sys(tr(captionsOn ? 'Live captions are on.' : 'Live captions are off.'));
+  }
+  $('#btn-cc').addEventListener('click', async () => {
+    if (!captionsOn) {
+      if (!SR) return C.toast('Captions are not available in this browser. Try Chrome or Edge.');
+      if (!(await C.sure(tr('Turn on live captions?'),
+        tr('What you say is written under the video for the class. To do this, your browser sends your voice to its speech service (Google for Chrome, Microsoft for Edge, Apple for Safari). Only your voice is captioned, never the students\'.'),
+        tr('Turn on'), { tone: 'blue', icon: 'cc', kind: 'primary', okFocus: true }))) return;
+    }
+    socket.emit('teacher', { action: 'captions', on: !captionsOn });
+  });
+  $('#btn-cc-show').addEventListener('click', () => {
+    showCC = !showCC;
+    $('#btn-cc-show').setAttribute('aria-pressed', String(showCC));
+    if (!showCC) $('#captions').hidden = true;
+  });
+
+  // ---------- stars ----------
+  function onStar(m) {
+    const reason = tr(C.STARS[m.reason] || '');
+    floatReaction('⭐', m.name);
+    const tile = tileOf(m.id === myId ? 'me' : m.id);
+    if (tile) { tile.classList.remove('starred'); void tile.offsetWidth; tile.classList.add('starred'); }
+    sys(tr('⭐ {name} got a star: {reason}', { name: m.id === myId ? tr('You') : m.name, reason }));
+    if (m.id === myId) C.toast(tr('You got a star: {reason}!', { reason }));
+    else if (myRole === 'teacher' && !m.saved) C.toast(tr('{name} joined as a guest, so this star is not kept.', { name: m.name }));
+  }
+  async function giveStar(id) {
+    const name = peers.get(id)?.info.name;
+    const reason = await C.ask({
+      title: tr('A star for {name}', { name }), text: tr('Why? Everyone in the class sees it. Students who signed in with their code keep their stars.'),
+      tone: 'yellow', icon: 'star',
+      actions: Object.entries(C.STARS).map(([value, label]) => ({ label: tr(label), value, kind: 'ghost' })),
+    });
+    if (reason) socket.emit('teacher', { action: 'star', target: id, reason });
+  }
+
   function floatReaction(emoji, name) {
     const f = document.createElement('div');
     f.className = 'float';
@@ -688,6 +836,7 @@
           ${i.hand ? `<button data-a="lower-hand" data-id="${id}">${tr('Lower hand')}</button>` : ''}
           ${i.mic !== false ? `<button data-a="mute" data-id="${id}">${tr('Mute')}</button>` : ''}
           ${i.role !== 'teacher' ? `<button data-a="chat-mute" data-id="${id}" aria-pressed="${!!i.chatMuted}">${tr(i.chatMuted ? 'Allow chat' : 'Stop chat')}</button>` : ''}
+          ${i.role !== 'teacher' ? `<button data-a="star" data-id="${id}" title="${esc(tr('Give a star'))}">⭐ ${tr('Star')}</button>` : ''}
           <button data-a="remove" data-id="${id}">${tr('Remove')}</button></div>` : ''}
       </li>`).join('');
     $('#people-count').textContent = rows.length;
@@ -698,6 +847,7 @@
   });
   $('#people-list').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return;
+    if (b.dataset.a === 'star') return giveStar(b.dataset.id);
     if (b.dataset.a === 'remove' && !(await C.sure(tr('Remove {name} from the class?', { name: peers.get(b.dataset.id)?.info.name }),
       tr('They leave the live class now. They can come back with the class link unless you lock the class.'), tr('Remove'), { icon: 'person' }))) return;
     socket.emit('teacher', { action: b.dataset.a, target: b.dataset.id });
@@ -749,6 +899,7 @@
     $('#t-lock').textContent = tr(roomLocked ? 'Unlock class' : 'Lock class');
     $('#t-lock-board').textContent = tr(boardLocked ? 'Let everyone draw' : 'Only I can draw');
     $('#board-note').hidden = !(boardLocked && myRole !== 'teacher');
+    applyCaptions(f.captions);
     const was = chatMode;
     chatMode = f.chat || 'all';
     $('#chat-mode').value = chatMode;
@@ -1224,6 +1375,7 @@
     if (!R.active && !silent) { location.hash = '#/today'; return; }
     R.active = false;
     stopRecording();
+    speechStop(); captionsOn = false; $('#captions').hidden = true;
     lkLeave();
     $('#rec-pill').hidden = true;
     clearInterval(clockTimer); clearInterval(speakTimer);

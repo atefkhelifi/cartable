@@ -29,6 +29,8 @@
   const loc = () => window.I18N.locale();
   const fmtTime = (x) => new Date(`2000-01-01T${x}:00`).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit', hourCycle: window.I18N.lang === 'en' ? undefined : 'h23' });
   C.t = t;
+  // why a teacher gives a star ("bon point"); the server keeps the key
+  C.STARS = { answer: 'Good answer', help: 'Helping others', effort: 'Hard work', listen: 'Good listening', idea: 'Great idea' };
   C.initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   const AV_COLORS = ['#2F6FED', '#2BA36B', '#8B5CF6', '#F0584A', '#F29E1F', '#0E9AA7'];
   C.avColor = (n) => AV_COLORS[[...String(n)].reduce((a, c) => a + c.charCodeAt(0), 0) % AV_COLORS.length];
@@ -54,6 +56,8 @@
     repeat: '<path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h16M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4"/>',
     eraser: '<path d="M8 20h12M5.5 14.5l8-8a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3L12 18H9z"/>',
     person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0M17 4l4 4M21 4l-4 4"/>',
+    star: '<path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
+    cc: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.5 10.2a2.4 2.4 0 1 0 0 3.6M17 10.2a2.4 2.4 0 1 0 0 3.6"/>',
   };
   C.ask = ({ title, text = '', tone = 'red', icon = 'trash', actions }) => new Promise((resolve) => {
     const d = $('#dlg-ask');
@@ -229,7 +233,8 @@
     finally { if (btn) btn.disabled = false; }
   });
   // change: signed-in teacher
-  $('#btn-password').addEventListener('click', () => {
+  $('#acc-password').addEventListener('click', () => {
+    $('#dlg-account').close();
     const f = $('#password-form');
     f.reset();
     f.username.value = C.profile?.username || '';
@@ -268,6 +273,68 @@
     }
   }
 
+  // ---------- my account: data export, deleting a teacher account ----------
+  $('#btn-account').addEventListener('click', () => {
+    $('#acc-sub').textContent = isTeacher() ? `${C.profile.name} (${C.profile.username})`
+      : isParent() ? t('Parent of {name}', { name: C.profile.name }) : C.profile.name;
+    $('#acc-data-text').textContent = t(isParent() ? "Everything Cartable keeps about your child, in one file (JSON)." : 'Everything Cartable keeps about you, in one file (JSON).');
+    $('#dlg-account').showModal();
+  });
+  $('#acc-export').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try {
+      const res = await fetch('/api/my/export', { headers: { authorization: `Bearer ${C.profile.token}` } });
+      if (!res.ok) throw new Error(t((await res.json().catch(() => ({}))).error || 'Something went wrong. Try again.'));
+      const name = decodeURIComponent((res.headers.get('content-disposition') || '').match(/filename\*=UTF-8''([^;]+)/)?.[1] || 'Cartable.json');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30e3);
+    } catch (err) { C.toast(err.message); }
+    finally { b.disabled = false; }
+  });
+  $('#acc-delete').addEventListener('click', () => {
+    $('#dlg-account').close();
+    const f = $('#delete-account-form');
+    f.reset();
+    f.username.value = C.profile?.username || '';
+    $('#delete-account-error').textContent = '';
+    $('#dlg-delete-account').showModal();
+  });
+  $('#delete-account-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.submitter; if (btn) btn.disabled = true;
+    try {
+      await C.api('/api/auth/account', { method: 'DELETE', body: JSON.stringify({ password: e.target.password.value }) });
+      $('#dlg-delete-account').close();
+      pushOff().catch(() => {});
+      store.del('cartable.profile');
+      C.profile = null;
+      C.toast('Your account is deleted.');
+      location.hash = '#/today';
+      route();
+    } catch (err) { $('#delete-account-error').textContent = err.message; }
+    finally { if (btn) btn.disabled = false; }
+  });
+
+  // ---------- stars (students and parents see theirs on Today) ----------
+  async function renderStars() {
+    const box = $('#stars-panel');
+    box.hidden = !hasAccount() || isTeacher();
+    if (box.hidden) return;
+    let d;
+    try { d = await C.api('/api/my/stars'); } catch { box.hidden = true; return; }
+    const who = isParent() ? C.profile.name : null;
+    box.innerHTML = `<h2>${esc(t(who ? 'Stars of {name}' : 'My stars', { name: who }))}</h2>
+      <p class="stars-count"><span class="stars-big" aria-hidden="true">★</span><b>${d.total}</b>
+        <span>${esc(t(d.total === 1 ? 'star from the teacher' : 'stars from the teacher'))}</span></p>
+      ${d.recent.length ? `<ul class="stars-recent">${d.recent.map((x) => `<li><span>${esc(t(C.STARS[x.reason] || ''))}</span>
+        <small>${esc(new Date(x.at).toLocaleDateString(loc(), { day: 'numeric', month: 'short' }))}, ${esc(x.teacher)}</small></li>`).join('')}</ul>`
+      : `<p class="muted small">${esc(t(who ? 'When the teacher gives {name} a star in class, it shows up here.' : 'When your teacher gives you a star in class, it shows up here.', { name: who }))}</p>`}`;
+  }
+
   // ---------- routing ----------
   let pushChecked = false;
   async function route() {
@@ -291,6 +358,7 @@
     $('#nav-classes').hidden = !isTeacher();
     $('#nav-attendance').hidden = !isParent();
     $('#nav-marks').hidden = !isTeacher();
+    $('#btn-account').hidden = !hasAccount();
     $('#nav-school').hidden = !isAdmin();
 
     if (view === 'room' && isParent()) { location.hash = '#/today'; return; }
@@ -310,7 +378,7 @@
     if (!$(`#view-${view}`)) { location.hash = '#/today'; return; }
     $$('.rail-link[data-nav]').forEach((a) => (a.dataset.nav === view ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     await loadCourses();
-    if (view === 'today') renderToday();
+    if (view === 'today') { renderToday(); renderStars(); }
     if (view === 'calendar') renderCalendar();
     if (window.School && view in allowed) window.School.show(view);
   }
