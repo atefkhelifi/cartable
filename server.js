@@ -187,14 +187,26 @@ const addColumn = (table, column, def) => {
 addColumn('courses', 'waiting_room', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('courses', 'roster_id', 'TEXT REFERENCES rosters(id) ON DELETE SET NULL');
 addColumn('attendance', 'student_id', 'TEXT');
+addColumn('teachers', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('teachers', 'last_login', 'INTEGER');
+// One-time password reset codes, made by a school admin (or with `npm run reset-code`).
+sql.exec(`CREATE TABLE IF NOT EXISTS password_resets (
+  teacher_id TEXT PRIMARY KEY REFERENCES teachers(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+)`);
+// Every school needs an admin: if there is none yet, the oldest teacher account becomes one.
+if (!sql.prepare('SELECT 1 FROM teachers WHERE is_admin = 1').get()) {
+  sql.prepare('UPDATE teachers SET is_admin = 1 WHERE id = (SELECT id FROM teachers ORDER BY created_at LIMIT 1)').run();
+}
 
 const q = {
   teacherByUser: sql.prepare('SELECT * FROM teachers WHERE username = ?'),
-  addTeacher: sql.prepare('INSERT INTO teachers (id, username, name, pass, created_at) VALUES (?, ?, ?, ?, ?)'),
+  addTeacher: sql.prepare('INSERT INTO teachers (id, username, name, pass, created_at, is_admin) VALUES (?, ?, ?, ?, ?, ?)'),
   teacherCount: sql.prepare('SELECT COUNT(*) AS n FROM teachers'),
   claimOrphans: sql.prepare('UPDATE courses SET teacher_id = ? WHERE teacher_id IS NULL'),
   addSession: sql.prepare('INSERT INTO sessions (token_hash, teacher_id, expires_at) VALUES (?, ?, ?)'),
-  session: sql.prepare('SELECT t.id, t.username, t.name FROM sessions s JOIN teachers t ON t.id = s.teacher_id WHERE s.token_hash = ? AND s.expires_at > ?'),
+  session: sql.prepare('SELECT t.id, t.username, t.name, t.is_admin AS admin FROM sessions s JOIN teachers t ON t.id = s.teacher_id WHERE s.token_hash = ? AND s.expires_at > ?'),
   delSession: sql.prepare('DELETE FROM sessions WHERE token_hash = ?'),
   addCourse: sql.prepare(`INSERT INTO courses (id, series, room, teacher_id, title, date, start_time, end_time, subject, grp, teacher, notes, color, waiting_room, roster_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
@@ -276,6 +288,46 @@ function prune() {
 }
 prune();
 setInterval(prune, 6 * 3600e3).unref();
+
+// ---------- backups ----------
+// Once a day, a copy of the database goes to DATA_DIR/backups; the newest BACKUP_DAYS copies are kept
+// (0 turns daily backups off). Shared files are not in it. An admin can also download a copy.
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const BACKUP_KEEP = Math.max(parseInt(process.env.BACKUP_DAYS ?? '14', 10) || 0, 0);
+const BACKUP_RE = /^cartable-\d{4}-\d{2}-\d{2}(-\d{6})?\.db$/;
+// On Render without a disk, everything in DATA_DIR is erased at each deploy or restart.
+const EPHEMERAL = !!process.env.RENDER && !process.env.DATA_DIR;
+function listBackups() {
+  let names = [];
+  try { names = fs.readdirSync(BACKUP_DIR).filter((n) => BACKUP_RE.test(n)); } catch {}
+  return names.map((name) => {
+    const st = fs.statSync(path.join(BACKUP_DIR, name));
+    return { name, size: st.size, at: st.mtime.toISOString() };
+  }).sort((a, b) => b.at.localeCompare(a.at));
+}
+// manual: a new file each time; daily: one file per day
+function makeBackup(daily) {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const iso = new Date().toISOString();
+  const name = `cartable-${iso.slice(0, 10)}${daily ? '' : '-' + iso.slice(11, 19).replace(/:/g, '')}.db`;
+  const file = path.join(BACKUP_DIR, name);
+  fs.rmSync(file, { force: true });
+  sql.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+  // keep the newest BACKUP_KEEP daily copies and the 5 newest manual ones
+  const all = listBackups(), manual = (b) => /-\d{6}\.db$/.test(b.name);
+  const old = [...all.filter((b) => !manual(b)).slice(Math.max(BACKUP_KEEP, 1)), ...all.filter(manual).slice(5)];
+  for (const b of old) fs.rmSync(path.join(BACKUP_DIR, b.name), { force: true });
+  return listBackups().find((b) => b.name === name);
+}
+function dailyBackup() {
+  if (!BACKUP_KEEP) return;
+  const today = `cartable-${new Date().toISOString().slice(0, 10)}.db`;
+  if (fs.existsSync(path.join(BACKUP_DIR, today))) return;
+  try { makeBackup(true); } catch (e) { console.error('Daily backup failed:', e.message); }
+}
+setTimeout(dailyBackup, 60e3).unref();
+setInterval(dailyBackup, 3600e3).unref();
+if (EPHEMERAL) console.warn('Warning: no disk is set (DATA_DIR). Accounts, classes and files are erased at each deploy or restart.');
 
 const toCourse = (r) => ({
   id: r.id, series: r.series, room: r.room, title: r.title, date: r.date, start: r.start_time, end: r.end_time,
@@ -391,11 +443,16 @@ app.use('/api', (req, res, next) => {
 const needTeacher = (req, res, next) => (req.teacher ? next() : res.status(401).json({ error: 'Please sign in as a teacher.' }));
 const needSignedIn = (req, res, next) => (req.teacher || req.pupil ? next() : res.status(401).json({ error: 'Please sign in again.' }));
 
+const needAdmin = (req, res, next) => (req.teacher?.admin ? next() : res.status(403).json({ error: 'Only a school admin can do this.' }));
+const teacherView = (t) => ({ id: t.id, username: t.username, name: t.name, admin: !!(t.admin ?? t.is_admin) });
+
 function startSession(res, t) {
   const token = crypto.randomBytes(32).toString('base64url');
   q.addSession.run(sha256(token), t.id, Date.now() + SESSION_DAYS * DAY);
-  res.json({ token, teacher: { id: t.id, username: t.username, name: t.name } });
+  sql.prepare('UPDATE teachers SET last_login = ? WHERE id = ?').run(Date.now(), t.id);
+  res.json({ token, teacher: teacherView(t) });
 }
+const checkNewPassword = (pw) => (typeof pw !== 'string' || pw.length < 8 || pw.length > 200 ? 'Use a password of at least 8 characters.' : null);
 
 app.post('/api/auth/signup', (req, res) => {
   if (!authLimit(req.ip)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
@@ -407,13 +464,14 @@ app.post('/api/auth/signup', (req, res) => {
   const password = String(b.password || '');
   if (!name) return res.status(400).json({ error: 'Add your name.' });
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) return res.status(400).json({ error: 'Pick a username of 3 to 30 letters or numbers.' });
-  if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Use a password of at least 8 characters.' });
+  if (checkNewPassword(password)) return res.status(400).json({ error: checkNewPassword(password) });
   if (q.teacherByUser.get(username)) return res.status(409).json({ error: 'That username is taken. Pick another one.' });
-  const t = { id: newId(), username, name };
+  const t = { id: newId(), username, name, admin: false };
   tx(() => {
-    const first = q.teacherCount.get().n === 0;
-    q.addTeacher.run(t.id, username, name, hashPassword(password), Date.now());
-    if (first) q.claimOrphans.run(t.id); // classes from before accounts existed go to the first teacher
+    // the first teacher of the school is its admin
+    t.admin = q.teacherCount.get().n === 0;
+    q.addTeacher.run(t.id, username, name, hashPassword(password), Date.now(), t.admin ? 1 : 0);
+    if (t.admin) q.claimOrphans.run(t.id); // classes from before accounts existed go to the first teacher
   });
   res.status(201);
   startSession(res, t);
@@ -455,8 +513,101 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', needSignedIn, (req, res) => {
-  if (req.teacher) return res.json({ role: 'teacher', teacher: req.teacher });
+  if (req.teacher) return res.json({ role: 'teacher', teacher: teacherView(req.teacher) });
   res.json({ role: req.pupil.kind, name: req.pupil.name, rosterName: req.pupil.rosterName });
+});
+
+// A teacher changes their own password. Every other device is signed out.
+app.post('/api/auth/password', needTeacher, (req, res) => {
+  if (!authLimit(req.ip)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+  const b = req.body || {};
+  const t = sql.prepare('SELECT pass FROM teachers WHERE id = ?').get(req.teacher.id);
+  if (!checkPassword(String(b.current || ''), t.pass)) return res.status(403).json({ error: 'Your current password is not right.' });
+  const bad = checkNewPassword(b.password);
+  if (bad) return res.status(400).json({ error: bad });
+  tx(() => {
+    sql.prepare('UPDATE teachers SET pass = ? WHERE id = ?').run(hashPassword(b.password), req.teacher.id);
+    sql.prepare('DELETE FROM sessions WHERE teacher_id = ? AND token_hash != ?').run(req.teacher.id, sha256(bearer(req)));
+  });
+  res.json({ ok: true });
+});
+
+// A teacher who forgot their password uses the one-time reset code their school admin gave them.
+// Reset codes look like "r7kp2-m4xqa" and are kept only as a hash, for 24 hours.
+const newResetCode = () => `${randChars(5)}-${randChars(5)}`;
+const resetHash = (c) => sha256('reset:' + normCode(c));
+app.post('/api/auth/reset', (req, res) => {
+  if (!authLimit(req.ip)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+  const b = req.body || {};
+  const t = q.teacherByUser.get(String(b.username || '').trim().toLowerCase());
+  const r = t && sql.prepare('SELECT code_hash FROM password_resets WHERE teacher_id = ? AND expires_at > ?').get(t.id, Date.now());
+  const want = Buffer.from(r ? r.code_hash : sha256('none'), 'hex');
+  const got = Buffer.from(resetHash(b.code), 'hex');
+  if (!r || !crypto.timingSafeEqual(got, want)) return res.status(401).json({ error: 'That username or reset code is not right. Ask your school admin for a new code.' });
+  const bad = checkNewPassword(b.password);
+  if (bad) return res.status(400).json({ error: bad });
+  tx(() => {
+    sql.prepare('UPDATE teachers SET pass = ? WHERE id = ?').run(hashPassword(b.password), t.id);
+    sql.prepare('DELETE FROM password_resets WHERE teacher_id = ?').run(t.id);
+    sql.prepare('DELETE FROM sessions WHERE teacher_id = ?').run(t.id);
+  });
+  startSession(res, t);
+});
+
+// ---------- school admin: teacher accounts and backups ----------
+app.get('/api/admin/teachers', needTeacher, needAdmin, (req, res) => {
+  const now = Date.now();
+  res.json(sql.prepare(`SELECT t.id, t.username, t.name, t.is_admin, t.created_at, t.last_login,
+      (SELECT COUNT(DISTINCT series) FROM courses c WHERE c.teacher_id = t.id) AS classes,
+      (SELECT COUNT(*) FROM students st JOIN rosters r ON r.id = st.roster_id WHERE r.teacher_id = t.id) AS students,
+      (SELECT expires_at FROM password_resets p WHERE p.teacher_id = t.id AND p.expires_at > ?) AS reset_until
+    FROM teachers t ORDER BY t.name COLLATE NOCASE`).all(now).map((t) => ({
+    ...teacherView(t), me: t.id === req.teacher.id, classes: t.classes, students: t.students,
+    createdAt: new Date(t.created_at).toISOString(), lastLogin: t.last_login ? new Date(t.last_login).toISOString() : null,
+    resetUntil: t.reset_until ? new Date(t.reset_until).toISOString() : null,
+  })));
+});
+const otherTeacher = (req, res) => {
+  const t = sql.prepare('SELECT * FROM teachers WHERE id = ?').get(String(req.params.id));
+  if (!t) { res.status(404).json({ error: 'Teacher not found.' }); return null; }
+  return t;
+};
+app.post('/api/admin/teachers/:id/reset', needTeacher, needAdmin, (req, res) => {
+  const t = otherTeacher(req, res); if (!t) return;
+  const code = newResetCode(), until = Date.now() + DAY;
+  sql.prepare('INSERT INTO password_resets (teacher_id, code_hash, expires_at) VALUES (?, ?, ?) ON CONFLICT(teacher_id) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at')
+    .run(t.id, resetHash(code), until);
+  res.json({ code, username: t.username, name: t.name, until: new Date(until).toISOString() });
+});
+app.patch('/api/admin/teachers/:id', needTeacher, needAdmin, (req, res) => {
+  const t = otherTeacher(req, res); if (!t) return;
+  if (typeof req.body?.admin !== 'boolean') return res.status(400).json({ error: 'Something went wrong. Try again.' });
+  if (t.id === req.teacher.id) return res.status(400).json({ error: 'Ask another admin to change your own role.' });
+  sql.prepare('UPDATE teachers SET is_admin = ? WHERE id = ?').run(req.body.admin ? 1 : 0, t.id);
+  res.json({ ok: true });
+});
+// Deleting a teacher deletes their classes, class lists, students and homework too.
+app.delete('/api/admin/teachers/:id', needTeacher, needAdmin, (req, res) => {
+  const t = otherTeacher(req, res); if (!t) return;
+  if (t.id === req.teacher.id) return res.status(400).json({ error: 'You cannot delete your own account here.' });
+  for (const [room] of rooms) if (roomInfo(room)?.teacherId === t.id) endLiveRoom(room);
+  sql.prepare('DELETE FROM teachers WHERE id = ?').run(t.id);
+  dropOrphanFiles();
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/backups', needTeacher, needAdmin, (req, res) => {
+  res.json({ list: listBackups(), keep: BACKUP_KEEP, auto: BACKUP_KEEP > 0, ephemeral: EPHEMERAL, dataDir: DATA_DIR });
+});
+app.post('/api/admin/backups', needTeacher, needAdmin, (req, res) => {
+  try { res.status(201).json(makeBackup()); }
+  catch (e) { console.error('Backup failed:', e.message); res.status(500).json({ error: 'The backup could not be made. Check the server log.' }); }
+});
+app.get('/api/admin/backups/:name', needTeacher, needAdmin, (req, res) => {
+  const name = String(req.params.name);
+  if (!BACKUP_RE.test(name) || !fs.existsSync(path.join(BACKUP_DIR, name))) return res.status(404).json({ error: 'Backup not found.' });
+  res.set('x-content-type-options', 'nosniff');
+  res.download(path.join(BACKUP_DIR, name), name);
 });
 
 // Teachers get their own classes. Students get their class list's classes plus any class whose
@@ -967,13 +1118,26 @@ const io = new Server(server, { maxHttpBufferSize: 2e5 });
 const rooms = new Map();
 function getRoom(id, info) {
   if (!rooms.has(id)) {
-    rooms.set(id, { peers: new Map(), lobby: new Map(), locked: false, boardLocked: false, waiting: !!info?.waiting, strokes: [], points: 0, bg: null, recording: null, poll: null, groups: null });
+    rooms.set(id, {
+      peers: new Map(), lobby: new Map(), locked: false, boardLocked: false, waiting: !!info?.waiting, strokes: [], points: 0, bg: null, recording: null, poll: null, groups: null,
+      // chat: 'all' (everyone writes), 'teacher' (students write to the teacher only) or 'off' (only the teacher writes)
+      chat: 'all', chatMuted: new Set(), pupilIds: new Map(),
+    });
   }
   return rooms.get(id);
 }
 const peerList = (r) => [...r.peers].map(([id, p]) => ({ id, ...p }));
 const lobbyList = (r) => [...r.lobby].map(([id, p]) => ({ id, name: p.name }));
-const flags = (r) => ({ locked: r.locked, boardLocked: r.boardLocked, waiting: r.waiting });
+const flags = (r) => ({ locked: r.locked, boardLocked: r.boardLocked, waiting: r.waiting, chat: r.chat });
+const CHAT_MODES = ['all', 'teacher', 'off'];
+// Send everyone to the end-of-class screen (the teacher ended it, or their account was deleted).
+function endLiveRoom(roomId) {
+  const r = rooms.get(roomId);
+  if (!r) return;
+  io.to(roomId).emit('ended');
+  [...r.lobby.keys()].forEach((id) => io.to(id).emit('ended'));
+  if (LK) [null, ...Array.from({ length: 8 }, (_, i) => i)].forEach((g) => lkClose(lkRoomName(roomId, g)));
+}
 
 // ---- polls: one at a time per class; only the teacher sees results until they are shown ----
 function pollView(r, forTeacher) {
@@ -1086,7 +1250,9 @@ io.on('connection', (socket) => {
     // Put this person in the class. Returns the welcome message, or an error if the class is full.
     const enter = () => {
       if (r.peers.size >= MAX_PEOPLE) return { error: 'This class is full ({n} people max).', n: MAX_PEOPLE };
-      me = { name: myName, role: teacher ? 'teacher' : 'student', verified: teacher || !!pupil, hand: false, mic: true, cam: true };
+      me = { name: myName, role: teacher ? 'teacher' : 'student', verified: teacher || !!pupil, hand: false, mic: true, cam: true,
+        chatMuted: !teacher && !!pupil && r.chatMuted.has('s:' + pupil.id) };
+      if (pupil) r.pupilIds.set(socket.id, pupil.id);
       socket.join(room);
       const others = peerList(r);
       r.peers.set(socket.id, me);
@@ -1094,7 +1260,7 @@ io.on('connection', (socket) => {
       socket.to(room).emit('peer-joined', { id: socket.id, ...me });
       return {
         ok: true, id: socket.id, role: me.role, name: me.name, peers: others, strokes: r.strokes.map((x) => x.s),
-        ...flags(r), recording: !!r.recording, bg: r.bg ? r.bg.v : 0, lobby: teacher ? lobbyList(r) : [],
+        ...flags(r), chatMuted: me.chatMuted, recording: !!r.recording, bg: r.bg ? r.bg.v : 0, lobby: teacher ? lobbyList(r) : [],
         poll: pollView(r, teacher), breakout: breakoutView(r),
         // newcomers start in the main room, so their LiveKit token is for it
         media: LK ? 'livekit' : 'mesh',
@@ -1129,12 +1295,23 @@ io.on('connection', (socket) => {
     io.to(msg.to).emit('signal', { from: socket.id, data: msg.data });
   });
 
-  on('chat', (text) => {
-    if (!roomId || !me || typeof text !== 'string' || !chatLimit(1)) return;
+  on('chat', (text, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => {};
+    if (!roomId || !me || typeof text !== 'string' || !chatLimit(1)) return reply({ ok: false });
     const t = text.trim().slice(0, 500);
-    if (!t) return;
+    if (!t) return reply({ ok: false });
     const r = getRoom(roomId);
-    const msg = { from: socket.id, name: me.name, role: me.role, text: t, at: Date.now() };
+    const student = me.role !== 'teacher';
+    if (student && me.chatMuted) return reply({ error: 'The teacher turned off your messages.' });
+    if (student && r.chat === 'off') return reply({ error: 'Only the teacher can write in the chat right now.' });
+    const msg = { id: crypto.randomBytes(6).toString('hex'), from: socket.id, name: me.name, role: me.role, text: t, at: Date.now() };
+    reply({ ok: true });
+    // "students write to the teacher only": the message goes to the teachers and back to its writer
+    if (student && r.chat === 'teacher') {
+      msg.private = true;
+      for (const [id, p] of r.peers) if (id === socket.id || p.role === 'teacher') io.to(id).emit('chat', msg);
+      return;
+    }
     if (!r.groups) return io.to(roomId).emit('chat', msg);
     // During group work, messages stay in the group. Teachers read every group, and a
     // teacher writing from the main room speaks to everyone.
@@ -1230,10 +1407,24 @@ io.on('connection', (socket) => {
           io.sockets.sockets.get(target)?.disconnect(true);
         }
         break;
-      case 'end':
-        io.to(roomId).emit('ended');
-        [...r.lobby.keys()].forEach((id) => io.to(id).emit('ended'));
-        if (LK) [null, ...Array.from({ length: 8 }, (_, i) => i)].forEach((g) => lkClose(lkRoomName(roomId, g)));
+      case 'end': endLiveRoom(roomId); break;
+
+      case 'chat-mode':
+        if (CHAT_MODES.includes(msg.mode)) { r.chat = msg.mode; io.to(roomId).emit('room-flags', flags(r)); }
+        break;
+      // stop (or allow again) one student's messages; students signed in with a code stay muted if they come back
+      case 'chat-mute': {
+        const p = has && r.peers.get(target);
+        if (!p || p.role === 'teacher') return;
+        p.chatMuted = !p.chatMuted;
+        const keys = [target, r.pupilIds.has(target) && 's:' + r.pupilIds.get(target)].filter(Boolean);
+        keys.forEach((k) => (p.chatMuted ? r.chatMuted.add(k) : r.chatMuted.delete(k)));
+        io.to(roomId).emit('peer-state', { id: target, ...p });
+        io.to(target).emit('chat-muted', p.chatMuted);
+        break;
+      }
+      case 'chat-delete':
+        if (typeof msg.id === 'string' && /^[0-9a-f]{12}$/.test(msg.id)) io.to(roomId).emit('chat-delete', msg.id);
         break;
       case 'record-start': r.recording = socket.id; io.to(roomId).emit('recording', { on: true, name: me.name }); break;
       case 'record-stop': if (r.recording) { r.recording = null; io.to(roomId).emit('recording', { on: false }); } break;
@@ -1292,6 +1483,7 @@ io.on('connection', (socket) => {
     if (!r) return;
     if (r.lobby.delete(socket.id)) sendLobby(r);
     if (r.peers.has(socket.id)) lkKick(lkRoomName(roomId, groupOf(r, socket.id)), socket.id);
+    r.pupilIds.delete(socket.id);
     if (r.peers.delete(socket.id)) {
       if (r.recording === socket.id) { r.recording = null; socket.to(roomId).emit('recording', { on: false }); }
       if (r.groups && r.groups.delete(socket.id)) sendBreakout(r, roomId);
