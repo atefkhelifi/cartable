@@ -1,23 +1,24 @@
 /* Cartable — design tokens
    Palette: school supplies. Ink navy for text, crayon colours for subjects,
-   pencil yellow as the one loud accent (raise hand, "now" states). */
+   pencil yellow as the one loud accent (raise hand, "now" states).
+   Text colours are dark enough for WCAG AA (4.5:1) on white and on --paper. */
 :root {
   --paper: #F5F8FD;
   --card: #FFFFFF;
   --ink: #1B2A4A;
   --ink-2: #4A5878;
-  --ink-3: #7E8AA5;
+  --ink-3: #5F6B85;
   --line: #DCE3F0;
   --line-2: #C9D3E6;
-  --blue: #2F6FED;
+  --blue: #2A62D6;
   --blue-soft: #E4EDFF;
   --yellow: #FFC93C;
   --yellow-soft: #FFF4D2;
-  --green: #2BA36B;
+  --green: #1B7A4F;
   --green-soft: #DDF4E8;
-  --red: #F0584A;
+  --red: #CF3A2C;
   --red-soft: #FDE3E0;
-  --purple: #8B5CF6;
+  --purple: #7446E8;
   --purple-soft: #EEE7FE;
   --orange: #F29E1F;
   --orange-soft: #FDEFD8;
@@ -787,7 +788,7 @@ button.stu-row:disabled { cursor: default; }
 .gb td input::placeholder { font-weight: 400; font-size: .78rem; color: var(--ink-3); }
 .gb td input:focus { outline: none; background: var(--blue-soft); box-shadow: inset 0 0 0 2px var(--blue); }
 .gb td.st-missing input::placeholder { color: var(--red); font-weight: 700; }
-.gb td.st-late input::placeholder { color: var(--orange); }
+.gb td.st-late input::placeholder { color: #A86300; } /* darker orange: readable on white */
 .gb td.st-in { background: var(--blue-soft); }
 .gb td.saved { background: var(--green-soft); transition: background .3s; }
 .gb .gb-avg { font-weight: 700; text-align: center; padding: 0 .75rem; border-inline-start: 2px solid var(--line); min-width: 84px; }
@@ -827,3 +828,8 @@ body.is-teacher .not-teacher { display: none !important; }
 .acc-danger b { color: var(--red); }
 .welcome-foot { margin: 1rem 0 0; text-align: center; font-size: .9rem; }
 .welcome-foot a { color: var(--ink-2); }
+
+/* Keyboard focus: buttons with their own shadow (primary, danger, raise hand) still show a ring.
+   On the dark class background the ring is pencil yellow, so it stays visible. */
+.btn:focus-visible, .hand-btn:focus-visible, .dock-btn:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.dock :focus-visible, .room-head :focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }

@@ -136,6 +136,7 @@ own [coturn](https://github.com/coturn/coturn) server).
 | Server | Node.js, Express, Socket.IO (signaling, chat, whiteboard sync) |
 | Video | WebRTC mesh: each person connects directly to everyone else (or LiveKit, optional) |
 | Frontend | Plain HTML, CSS and JavaScript, no build step |
+| Fonts | Served by Cartable from the `@fontsource` packages (no Google Fonts); `npm run build-fonts` regenerates `public/css/fonts.css` |
 | Storage | SQLite file `data/cartable.db` (teachers, class lists, classes, homework, attendance), files in `data/files/`, daily copies in `data/backups/` |
 
 A mesh works well for a class of about 10–16 people.
@@ -167,6 +168,9 @@ npm test
 Each test file starts its own Cartable server on a free port with an empty data
 folder, and talks to it over HTTP and Socket.IO. GitHub Actions runs the tests on
 Node 22 and 24 for every push to `main` and every pull request.
+
+Some things need real people and devices (video across networks, notifications on
+phones, captions, installing the app): see [docs/TESTING.md](docs/TESTING.md).
 
 ## Good to know
 

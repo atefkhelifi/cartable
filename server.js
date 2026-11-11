@@ -10,6 +10,7 @@ const push = require('./lib/push');
 
 const PORT = process.env.PORT || 3000;
 const PROD = process.env.NODE_ENV === 'production';
+const TEST = process.env.NODE_ENV === 'test'; // the test suite (npm test)
 // The school code is only needed to create a teacher account.
 const SCHOOL_CODE = String(process.env.TEACHER_CODE || 'teach').trim();
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -455,9 +456,40 @@ const roomLimit = limiter(60, 15 * 60e3);   // unknown room codes tried per IP
 // ---------- HTTP ----------
 const app = express();
 app.set('trust proxy', 1);
+// Security headers. The page only runs its own scripts, plus LiveKit (jsDelivr) and PDF.js (cdnjs).
+const LK_HOSTS = LK ? (() => {
+  const host = new URL(LK.url.replace(/^ws/, 'http')).host;
+  return host.endsWith('.livekit.cloud') ? ['https://*.livekit.cloud', 'wss://*.livekit.cloud'] : [`https://${host}`, `wss://${host}`];
+})() : [];
+app.use((req, res, next) => {
+  const host = String(req.headers.host || '').replace(/[^a-z0-9.:-[]]/gi, '');
+  res.set({
+    'content-security-policy': [
+      "default-src 'self'",
+      "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
+      "worker-src 'self' blob: https://cdnjs.cloudflare.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "media-src 'self' blob:",
+      "font-src 'self'",
+      ['connect-src', "'self'", host && `wss://${host}`, host && `ws://${host}`, 'https://cdnjs.cloudflare.com', ...LK_HOSTS].filter(Boolean).join(' '),
+      "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'", "manifest-src 'self'",
+    ].join('; '),
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'same-origin',
+    'permissions-policy': 'camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=(), usb=()',
+    'cross-origin-opener-policy': 'same-origin',
+    ...(PROD ? { 'strict-transport-security': 'max-age=15552000' } : {}),
+  });
+  next();
+});
 app.use(express.json({ limit: '50kb' }));
 app.get('/healthz', (req, res) => res.send('ok'));
 app.get('/api/config', (req, res) => res.json({ iceServers: ICE_SERVERS, privacyContact: PRIVACY_CONTACT }));
+// Fonts are served from the @fontsource packages (see scripts/build-fonts.js), not from Google.
+for (const pkg of ['atkinson-hyperlegible', 'fredoka', 'baloo-bhaijaan-2', 'ibm-plex-sans-arabic']) {
+  app.use(`/fonts/${pkg}`, express.static(path.join(__dirname, 'node_modules', '@fontsource', pkg, 'files'), { maxAge: '365d', immutable: true }));
+}
 // the service worker is checked for updates on every visit
 app.get('/sw.js', (req, res, next) => { res.set('cache-control', 'no-cache'); next(); });
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -1304,10 +1336,11 @@ setInterval(() => { try { classReminders(); } catch (e) { console.error('Class r
 app.get('/api/push/key', (req, res) => res.json({ key: PUSH.publicKey }));
 app.post('/api/push/subscribe', needSignedIn, (req, res) => {
   const sub = req.body?.subscription, keys = sub?.keys;
-  const ok = sub && typeof sub.endpoint === 'string' && sub.endpoint.length < 1000 && push.allowedEndpoint(sub.endpoint, !PROD)
+  const ok = sub && typeof sub.endpoint === 'string' && sub.endpoint.length < 1000 && push.allowedEndpoint(sub.endpoint, TEST)
     && typeof keys?.p256dh === 'string' && Buffer.from(keys.p256dh, 'base64url').length === 65
     && typeof keys?.auth === 'string' && Buffer.from(keys.auth, 'base64url').length >= 16;
   if (!ok) return res.status(400).json({ error: 'This browser cannot get notifications.' });
+  if (!uploadLimit('push:' + (req.teacher?.id || req.pupil.id))) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
   const lang = ['en', 'fr', 'ar'].includes(req.body.lang) ? req.body.lang : 'en';
   const [kind, owner] = req.teacher ? ['teacher', req.teacher.id] : [req.pupil.kind, req.pupil.id];
   sql.prepare(`INSERT INTO push_subs (endpoint, p256dh, auth, kind, owner, lang, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1320,7 +1353,7 @@ app.post('/api/push/unsubscribe', (req, res) => {
   sql.prepare('DELETE FROM push_subs WHERE endpoint = ?').run(String(req.body?.endpoint || ''));
   res.json({ ok: true });
 });
-if (!PROD) app.post('/api/test/reminders', (req, res) => { classReminders(Number(req.body?.now) || Date.now()); res.json({ ok: true }); });
+if (TEST) app.post('/api/test/reminders', (req, res) => { classReminders(Number(req.body?.now) || Date.now()); res.json({ ok: true }); });
 
 // ---------- gradebook ----------
 // Every student of a class list against every homework; the app shows it as a table or a CSV file.
