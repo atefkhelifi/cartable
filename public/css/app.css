@@ -260,17 +260,127 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .day-item .notes { font-size: .9rem; margin-bottom: .6rem; }
 .day-item .acts { display: flex; gap: .4rem; flex-wrap: wrap; }
 
-/* ---------- dialogs ---------- */
+/* ---------- dialogs: a page from the class notebook ----------
+   A coloured cover band (the dialog's purpose), a stuck-on label with the title,
+   a scrolling body, and the actions pinned under a dashed tear-off line. */
+.dialog { --tone: var(--blue); --tone-soft: var(--blue-soft); --tone-deep: #1E4FB8; }
+.tone-blue   { --tone: var(--blue);   --tone-soft: var(--blue-soft);   --tone-deep: #1E4FB8; }
+.tone-purple { --tone: var(--purple); --tone-soft: var(--purple-soft); --tone-deep: #6236D9; }
+.tone-orange { --tone: var(--orange); --tone-soft: var(--orange-soft); --tone-deep: #B86F00; }
+.tone-green  { --tone: var(--green);  --tone-soft: var(--green-soft);  --tone-deep: #1B7A4D; }
+.tone-yellow { --tone: var(--yellow); --tone-soft: var(--yellow-soft); --tone-deep: #B88A00; }
+.tone-red    { --tone: var(--red);    --tone-soft: var(--red-soft);    --tone-deep: #C23A2E; }
+.ask-text { color: var(--ink-2); font-size: 1.02rem; }
+#dlg-ask .dlg-body { padding-block: 1.2rem 1.1rem; }
+@media (min-width: 601px) { #dlg-ask { width: min(520px, calc(100% - 32px)); } }
+
 .dialog {
-  width: min(620px, calc(100% - 32px)); max-height: calc(100% - 32px); padding: 1.6rem;
+  width: min(620px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; overflow: hidden;
   border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 6px 6px 0 var(--ink);
   background: var(--card); color: var(--ink);
 }
-.dialog-sm { width: min(420px, calc(100% - 32px)); }
-.dialog::backdrop { background: rgba(20, 32, 58, .55); }
-.prejoin-preview { aspect-ratio: 16/9; background: var(--stage); border-radius: var(--r-md); overflow: hidden; display: grid; place-items: center; }
+.dialog[open] { display: flex; flex-direction: column; }
+.dialog-sm { width: min(440px, calc(100% - 32px)); }
+.dialog::backdrop { background: rgba(20, 32, 58, .55); backdrop-filter: blur(2px); }
+.dlg { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+
+/* the cover band and its label */
+.dlg-head {
+  flex: none; display: flex; align-items: flex-start; gap: .75rem; padding: 1.1rem 1.1rem 1.25rem 1.25rem;
+  background: var(--tone-soft); border-bottom: 2px solid var(--ink);
+  background-image: repeating-linear-gradient(-45deg, transparent 0 10px, color-mix(in srgb, var(--tone) 9%, transparent) 10px 12px);
+}
+.dlg-label {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: .8rem;
+  padding: .7rem 1rem .75rem .75rem; background: var(--card);
+  border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(-1.2deg); transform-origin: 20% 50%;
+}
+.dlg-label h2 { font-size: 1.3rem; overflow-wrap: anywhere; }
+.dlg-label p { margin-top: .15rem; color: var(--ink-2); font-size: .9rem; line-height: 1.35; }
+.dlg-icon {
+  flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px;
+  background: var(--tone); color: #fff; box-shadow: inset 0 -3px 0 var(--tone-deep);
+}
+.tone-yellow .dlg-icon { color: var(--ink); }
+.dlg-icon svg { width: 24px; height: 24px; stroke-width: 2; }
+.dlg-x {
+  flex: none; width: 40px; height: 40px; display: grid; place-items: center; margin-top: .15rem;
+  border: 2px solid var(--ink); border-radius: 50%; background: var(--card); color: var(--ink);
+}
+.dlg-x:hover { background: var(--ink); color: #fff; }
+.dlg-x svg { width: 18px; height: 18px; stroke-width: 2.4; }
+
+/* body scrolls, actions stay put */
+.dlg-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; padding: 1.35rem 1.5rem 1.25rem; }
+.dlg-foot {
+  flex: none; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .6rem;
+  padding: .9rem 1.5rem 1.1rem; border-top: 2px dashed var(--line-2); background: var(--card);
+}
+
+/* one deliberate moment: the label is stuck on as the page opens */
+@media (prefers-reduced-motion: no-preference) {
+  .dialog[open] { animation: dlg-in .2s cubic-bezier(.2, .8, .3, 1); }
+  .dialog[open] .dlg-label { animation: dlg-stick .38s cubic-bezier(.3, 1.4, .5, 1) .06s both; }
+  .dialog[open]::backdrop { animation: dlg-fade .2s ease-out; }
+}
+@keyframes dlg-in { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+@keyframes dlg-stick { from { opacity: 0; transform: rotate(-7deg) scale(1.08) translateY(-6px); } }
+@keyframes dlg-fade { from { opacity: 0; } }
+
+/* phones: a sheet that comes up from the bottom */
+@media (max-width: 600px) {
+  .dialog, .dialog-sm {
+    width: 100%; max-width: 100%; margin: auto 0 0; max-height: calc(100dvh - 24px);
+    border-width: 2px 0 0; border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -4px 0 var(--ink);
+  }
+  .dlg-head { padding: 1rem 16px 1.1rem; }
+  .dlg-body { padding: 1.1rem 16px; }
+  .dlg-foot { padding: .8rem 16px calc(.9rem + env(safe-area-inset-bottom)); }
+  .dlg-foot .btn { flex: 1; }
+  @media (prefers-reduced-motion: no-preference) {
+    .dialog[open] { animation-name: dlg-up; animation-duration: .24s; }
+  }
+}
+@keyframes dlg-up { from { transform: translateY(40%); opacity: .4; } }
+
+/* join screen: camera preview and big switches */
+.prejoin-preview { aspect-ratio: 16/9; background: var(--stage); border-radius: var(--r-md); border: 2px solid var(--ink); overflow: hidden; display: grid; place-items: center; }
 .prejoin-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .prejoin-preview p { color: #C8D3EA; padding: 1rem; text-align: center; }
+.toggles { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.toggle input { position: absolute; opacity: 0; }
+.toggle span {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem;
+  min-height: 56px; padding: .6rem .9rem; border-radius: var(--r-md); cursor: pointer;
+  border: 2px solid var(--ink); background: var(--card); box-shadow: 0 3px 0 var(--ink);
+}
+.toggle svg { width: 24px; height: 24px; }
+.toggle b { font-family: var(--font-head); font-weight: 600; }
+.toggle i { font-style: normal; font-weight: 700; font-size: .85rem; padding: .1rem .55rem; border-radius: 999px; }
+.toggle .t-on { background: var(--green-soft); color: #17663F; }
+.toggle .t-off { display: none; background: var(--red-soft); color: #B42318; }
+.toggle .slash { display: none; }
+.toggle input:not(:checked) + span { background: var(--paper); box-shadow: 0 1px 0 var(--ink); transform: translateY(2px); }
+.toggle input:not(:checked) + span .slash, .toggle input:not(:checked) + span .t-off { display: inline; }
+.toggle input:not(:checked) + span .t-on { display: none; }
+.toggle input:focus-visible + span { box-shadow: var(--focus); }
+.toggle input:disabled + span { opacity: .45; cursor: not-allowed; }
+@media (max-width: 420px) { .toggles { grid-template-columns: 1fr; } }
+
+/* join with a code: the code is the whole point, so make it big */
+.code-input { font-family: var(--font-head) !important; font-size: 1.5rem; letter-spacing: .08em; text-align: center; direction: ltr; }
+
+/* files: a drop-zone style picker */
+.drop {
+  display: grid; justify-items: center; gap: .25rem; padding: 1.1rem 1rem; text-align: center; cursor: pointer;
+  border: 2px dashed var(--tone); border-radius: var(--r-md); background: var(--tone-soft);
+}
+.drop:hover { border-style: solid; }
+.drop:focus-within { box-shadow: var(--focus); }
+.drop svg { width: 28px; height: 28px; color: var(--tone-deep); stroke-width: 2; }
+.drop b { font-family: var(--font-head); font-weight: 600; font-size: 1.05rem; }
+.drop small { color: var(--ink-2); font-size: .82rem; }
 .att-list { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow: auto; }
 .att-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 0; border-top: 1px solid var(--line); }
 
@@ -568,7 +678,7 @@ button.poll-choice:hover:not(:disabled) { border-color: var(--blue); }
 .file-list .nm a { display: block; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
 .file-list .nm small { color: var(--ink-3); }
 .file-list .del { border: 0; background: var(--paper); border-radius: 999px; padding: .25rem .6rem; font-size: .8rem; font-weight: 700; }
-.file-list .empty { justify-content: center; color: var(--ink-3); border: 0; padding: 1.5rem 0; }
+.file-list .empty { justify-content: center; text-align: center; color: var(--ink-3); border: 0; padding: 1.5rem 0; }
 .poll-voters { margin: .4rem 0 0; padding-inline-start: 1.2rem; font-size: .85rem; color: var(--ink-2); }
 .poll-panel details summary { cursor: pointer; font-weight: 700; color: var(--ink-2); }
 
@@ -627,3 +737,5 @@ button.stu-row:disabled { cursor: default; }
   #print-cards .code-card { border: 1.5px dashed #555; }
   body { background: #fff !important; }
 }
+/* inside a dialog the body already scrolls: no second scrollbar */
+.dlg-body .att-list, .dlg-body .file-list, .dlg-body .code-cards { max-height: none; overflow: visible; }
