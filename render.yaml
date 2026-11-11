@@ -3,7 +3,14 @@ services:
   - type: web
     name: cartable
     runtime: node
+    # The free plan has no disk: everything is erased at each deploy or restart.
+    # For a real school, use a paid plan with a disk (uncomment below) and DATA_DIR.
     plan: free
+    # plan: starter
+    # disk:
+    #   name: cartable-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
     region: frankfurt
     buildCommand: npm ci
     startCommand: npm start
@@ -16,6 +23,10 @@ services:
         generateValue: true   # Render creates a random secret; find it under Environment
       - key: CODE_SECRET
         generateValue: true   # keeps student and parent codes valid across deploys
+      # - key: DATA_DIR
+      #   value: /var/data    # with the disk above
+      - key: BACKUP_DAYS
+        value: "14"           # daily database copies to keep (0 = off)
       - key: TURN_URLS
         sync: false           # optional, e.g. turn:global.relay.metered.ca:80,turns:global.relay.metered.ca:443?transport=tcp
       - key: TURN_USERNAME

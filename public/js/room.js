@@ -14,6 +14,7 @@
   let micOn = true, camOn = true, hand = false;
   let joinedAt = 0, clockTimer, speakTimer, audioCtx;
   let boardLocked = false, roomLocked = false;
+  let chatMode = 'all', chatMuted = false;
   let spotId = null, pinnedId = null, boardBig = false;
   let rec = null; // teacher's recording: { recorder, chunks, display, ac, type, startedAt }
   const peers = new Map(); // id -> { pc, stream, info, tile, pending: [], analyser }
@@ -71,6 +72,7 @@
     $('#room-name').textContent = course?.title || tr('Live class');
     $('#room-meta').textContent = [course?.subject && tr(course.subject), course?.group, tr('Code {code}', { code })].filter(Boolean).join(', ');
     $('#chat-log').innerHTML = '';
+    chatMode = 'all'; chatMuted = false;
     $('#tiles').innerHTML = '';
     if (audioTrack()) audioTrack().enabled = micOn;
     if (camTrack()) camTrack().enabled = camOn;
@@ -96,6 +98,7 @@
       document.body.classList.toggle('is-teacher', myRole === 'teacher');
       addTile('me', { name: res.name || C.profile.name, role: myRole, mic: micOn, cam: camOn, hand: false }, camStream, true);
       sendState();
+      chatMuted = !!res.chatMuted;
       applyFlags(res);
       setRecording(res.recording, null, true);
       loadBoard(res.strokes, res.bg);
@@ -140,6 +143,16 @@
     });
     socket.on('signal', onSignal);
     socket.on('chat', onChat);
+    socket.on('chat-delete', (id) => {
+      const li = $(`#chat-log li[data-id="${CSS.escape(String(id))}"]`); if (!li) return;
+      li.classList.add('deleted');
+      li.querySelector('.bubble').textContent = tr('Message deleted by the teacher');
+      li.querySelector('.chat-del')?.remove();
+    });
+    socket.on('chat-muted', (on) => {
+      chatMuted = !!on; syncChatForm();
+      C.toast(on ? 'The teacher turned off your messages.' : 'You can write in the chat again.');
+    });
     socket.on('react', ({ name, emoji }) => floatReaction(emoji, name));
     socket.on('draw', addStroke);
     socket.on('clear-board', clearBoard);
@@ -621,17 +634,41 @@
   function onChat(m) {
     const li = document.createElement('li');
     if (m.from === myId) li.className = 'mine';
+    if (m.id) li.dataset.id = m.id;
+    // a message only the teacher can read ("students write to me only")
+    if (m.private) li.classList.add('private');
     const time = new Date(m.at).toLocaleTimeString(loc(), { hour: 'numeric', minute: '2-digit', hourCycle: window.I18N.lang === 'en' ? undefined : 'h23' });
-    li.innerHTML = `<div class="who">${m.from === myId ? tr('You') : esc(m.name)}${m.role === 'teacher' && m.from !== myId ? ` <span class="role">${tr('(Teacher)')}</span>` : ''}${chatScope(m)}, ${time}</div><div class="bubble">${esc(m.text)}</div>`;
+    li.innerHTML = `<div class="who">${m.from === myId ? tr('You') : esc(m.name)}${m.role === 'teacher' && m.from !== myId ? ` <span class="role">${tr('(Teacher)')}</span>` : ''}${chatScope(m)}${m.private ? ` <span class="role">${tr(m.from === myId ? 'to the teacher' : 'only you see this')}</span>` : ''}, ${time}${myRole === 'teacher' && m.id ? ` <button class="chat-del" type="button" data-del-msg="${esc(m.id)}" aria-label="${esc(tr('Delete this message'))}" title="${esc(tr('Delete this message'))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>` : ''}</div><div class="bubble">${esc(m.text)}</div>`;
     appendChat(li);
     if ($('#tab-chat').hidden && m.from !== myId) { unread++; $('#chat-badge').textContent = unread; $('#chat-badge').hidden = false; }
   }
   $('#chat-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = $('#chat-input').value.trim();
-    if (v) socket.emit('chat', v);
+    if (!v) return;
+    socket.emit('chat', v, (res) => {
+      if (res?.error) { C.toast(res.error); $('#chat-input').value ||= v; }
+    });
     $('#chat-input').value = '';
   });
+  $('#chat-log').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-del-msg]');
+    if (b && myRole === 'teacher') socket.emit('teacher', { action: 'chat-delete', id: b.dataset.delMsg });
+  });
+  $('#chat-mode').addEventListener('change', (e) => socket.emit('teacher', { action: 'chat-mode', mode: e.target.value }));
+  // students: say who can read what they write, or why they cannot write
+  function syncChatForm() {
+    const student = myRole !== 'teacher';
+    const blocked = student && (chatMuted || chatMode === 'off');
+    const note = !student ? '' : chatMuted ? 'The teacher turned off your messages.'
+      : chatMode === 'off' ? 'Only the teacher can write in the chat right now.'
+      : chatMode === 'teacher' ? 'Your messages go to the teacher only.' : '';
+    $('#chat-note').hidden = !note;
+    $('#chat-note').textContent = tr(note);
+    $('#chat-input').disabled = blocked;
+    $('#chat-form button').disabled = blocked;
+    $('#chat-input').placeholder = tr(blocked ? 'Chat is closed' : 'Write a message');
+  }
 
   // ---------- people & teacher tools ----------
   function renderPeople() {
@@ -642,7 +679,7 @@
     $('#people-list').innerHTML = rows.map(([id, i]) => `
       <li>
         ${C.avatar(i.name)}
-        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</b><small>${tr(i.role === 'teacher' ? 'Teacher' : 'Student')}${myRole === 'teacher' && id !== 'me' && i.role !== 'teacher' ? ', ' + tr(i.verified ? 'signed in with a code' : 'guest') : ''}${i.mic === false ? ', ' + tr('muted') : ''}${i.sharing ? ', ' + tr('sharing screen') : ''}</small>${breakout.active && myRole === 'teacher' && id === 'me' ? ` <span class="grp">${esc(groupName(groupOf('me')))}</span>` : ''}</div>
+        <div class="nm"><b>${esc(i.name)}${id === 'me' ? ' ' + tr('(you)') : ''}</b><small>${tr(i.role === 'teacher' ? 'Teacher' : 'Student')}${myRole === 'teacher' && id !== 'me' && i.role !== 'teacher' ? ', ' + tr(i.verified ? 'signed in with a code' : 'guest') : ''}${i.mic === false ? ', ' + tr('muted') : ''}${i.chatMuted && myRole === 'teacher' ? ', ' + tr('chat off') : ''}${i.sharing ? ', ' + tr('sharing screen') : ''}</small>${breakout.active && myRole === 'teacher' && id === 'me' ? ` <span class="grp">${esc(groupName(groupOf('me')))}</span>` : ''}</div>
         ${i.hand ? `<span class="hand-mark" title="${tr('Hand raised')}">✋</span>` : ''}
         ${myRole === 'teacher' && id !== 'me' && breakout.active ? `<select data-move="${id}" aria-label="${esc(tr('Move {name} to a group', { name: i.name }))}">
           ${[null, ...Array.from({ length: breakout.count }, (_, k) => k)].map((g) => `<option value="${g === null ? '' : g}"${g === groupOf(id) ? ' selected' : ''}>${esc(groupName(g))}</option>`).join('')}
@@ -650,6 +687,7 @@
         ${myRole === 'teacher' && id !== 'me' ? `<div class="acts">
           ${i.hand ? `<button data-a="lower-hand" data-id="${id}">${tr('Lower hand')}</button>` : ''}
           ${i.mic !== false ? `<button data-a="mute" data-id="${id}">${tr('Mute')}</button>` : ''}
+          ${i.role !== 'teacher' ? `<button data-a="chat-mute" data-id="${id}" aria-pressed="${!!i.chatMuted}">${tr(i.chatMuted ? 'Allow chat' : 'Stop chat')}</button>` : ''}
           <button data-a="remove" data-id="${id}">${tr('Remove')}</button></div>` : ''}
       </li>`).join('');
     $('#people-count').textContent = rows.length;
@@ -711,6 +749,11 @@
     $('#t-lock').textContent = tr(roomLocked ? 'Unlock class' : 'Lock class');
     $('#t-lock-board').textContent = tr(boardLocked ? 'Let everyone draw' : 'Only I can draw');
     $('#board-note').hidden = !(boardLocked && myRole !== 'teacher');
+    const was = chatMode;
+    chatMode = f.chat || 'all';
+    $('#chat-mode').value = chatMode;
+    syncChatForm();
+    if (was !== chatMode && myRole !== 'teacher' && R.active) sys(tr({ all: 'Everyone can write in the chat again.', teacher: 'Your messages now go to the teacher only.', off: 'Only the teacher can write in the chat now.' }[chatMode]));
   }
 
   // ---------- polls & quizzes ----------

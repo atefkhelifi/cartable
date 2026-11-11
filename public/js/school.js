@@ -14,9 +14,9 @@
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   // Homework files need the sign-in token, so they are fetched and saved as a download.
-  async function download(id, name) {
+  async function download(id, name, url = `/api/hwfiles/${id}`) {
     try {
-      const res = await fetch(`/api/hwfiles/${id}`, { headers: { authorization: `Bearer ${C.profile.token}` } });
+      const res = await fetch(url, { headers: { authorization: `Bearer ${C.profile.token}` } });
       if (!res.ok) throw new Error(t((await res.json().catch(() => ({}))).error || 'Something went wrong. Try again.'));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(await res.blob());
@@ -47,6 +47,7 @@
     if (view === 'homework') showHomework();
     if (view === 'classes') showRosters();
     if (view === 'attendance') showAttendance();
+    if (view === 'school') showSchool();
   };
 
   // =====================================================================
@@ -404,4 +405,79 @@
     $('#my-att-list').innerHTML = list.length ? list.map((a) => `<li><span>${esc(a.title || t('Live class'))}</span><span class="muted">${esc(fmtWhen(a.at))}</span></li>`).join('')
       : `<li>${t('No classes joined yet.')}</li>`;
   }
+  // =====================================================================
+  // SCHOOL (admin): teacher accounts and backups
+  // =====================================================================
+  let teachers = [];
+  async function showSchool() {
+    try { teachers = await C.api('/api/admin/teachers'); } catch (err) { C.toast(err.message); teachers = []; }
+    $('#teacher-list').innerHTML = teachers.map((x) => `<li class="stu-row">
+        ${C.avatar(x.name)}
+        <span class="nm">${esc(x.name)}${x.me ? ' ' + esc(t('(you)')) : ''} ${x.admin ? `<span class="tag">${t('Admin')}</span>` : ''}
+          <small>${esc(x.username)}, ${esc(t(x.classes === 1 ? '1 class' : '{n} classes', { n: x.classes }))}, ${esc(t(x.students === 1 ? '1 student' : '{n} students', { n: x.students }))}</small>
+          <small>${esc(x.lastLogin ? t('Last signed in {date}', { date: fmtWhen(x.lastLogin) }) : t('Never signed in'))}${x.resetUntil ? ', ' + esc(t('reset code waiting')) : ''}</small></span>
+        ${x.me ? '' : `<span class="acts">
+          <button class="btn btn-ghost btn-sm" type="button" data-reset="${esc(x.id)}">${t('Reset code')}</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-admin="${esc(x.id)}" data-on="${x.admin ? '' : '1'}">${t(x.admin ? 'Remove admin' : 'Make admin')}</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-rmteacher="${esc(x.id)}">${t('Delete')}</button>
+        </span>`}
+      </li>`).join('');
+    renderBackups();
+  }
+  $('#teacher-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const x = teachers.find((y) => y.id === (b.dataset.reset || b.dataset.admin || b.dataset.rmteacher));
+    if (!x) return;
+    try {
+      if (b.dataset.reset) {
+        if (!(await C.sure(t('Make a reset code for {name}?', { name: x.name }),
+          t('{name} can then choose a new password. Their current password keeps working until they do.', { name: x.name }), t('Make a code'),
+          { tone: 'yellow', icon: 'key', kind: 'primary', okFocus: true }))) return;
+        const r = await C.api(`/api/admin/teachers/${x.id}/reset`, { method: 'POST' });
+        $('#rc-sub').textContent = t('For {name} ({username}). Shown only this once.', { name: r.name, username: r.username });
+        $('#rc-code').textContent = r.code;
+        $('#rc-how').textContent = t('Give it to them in person or by phone. On the sign-in page they choose Teacher, then "Forgot your password?". It works once, until {date}.', { date: fmtWhen(r.until) });
+        $('#dlg-resetcode').showModal();
+      } else if (b.dataset.admin) {
+        const on = b.dataset.on === '1';
+        if (on && !(await C.sure(t('Make {name} a school admin?', { name: x.name }),
+          t('Admins can reset passwords, delete teacher accounts and download backups.'), t('Make admin'),
+          { tone: 'yellow', icon: 'key', kind: 'primary' }))) return;
+        await C.api(`/api/admin/teachers/${x.id}`, { method: 'PATCH', body: JSON.stringify({ admin: on }) });
+      } else {
+        if (!(await C.sure(t('Delete the account of {name}?', { name: x.name }),
+          t('Their classes, class lists, students, homework and files are deleted too. This cannot be undone.'), t('Delete account'), { icon: 'person' }))) return;
+        await C.api(`/api/admin/teachers/${x.id}`, { method: 'DELETE' });
+        C.toast('Account deleted.');
+      }
+      showSchool();
+    } catch (err) { C.toast(err.message); }
+  });
+  $('#rc-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('#rc-code').textContent); C.toast('Copied.'); } catch { C.toast('Select the code and copy it.'); }
+  });
+  $('#dlg-resetcode').addEventListener('close', () => { $('#rc-code').textContent = ''; });
+
+  async function renderBackups() {
+    let b;
+    try { b = await C.api('/api/admin/backups'); } catch (err) { C.toast(err.message); return; }
+    $('#data-warn').hidden = !b.ephemeral;
+    $('#backup-sub').textContent = b.auto
+      ? t('Every day, Cartable saves a copy of its database on the server and keeps the last {n}. Download one now and then to keep a copy somewhere else. Shared files are not in it.', { n: b.keep })
+      : t('Daily backups are turned off (BACKUP_DAYS=0). You can still make one here.');
+    $('#backup-list').innerHTML = b.list.length ? b.list.map((x) => `<li><span class="ic" aria-hidden="true">db</span>
+        <span class="nm"><a href="#" data-backup="${esc(x.name)}">${esc(fmtWhen(x.at))}</a><small>${esc(x.name)}, ${esc(fmtSize(x.size))}</small></span></li>`).join('')
+      : `<li class="empty">${t('No backups yet.')}</li>`;
+  }
+  $('#backup-list').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-backup]'); if (!a) return;
+    e.preventDefault();
+    download(null, a.dataset.backup, `/api/admin/backups/${encodeURIComponent(a.dataset.backup)}`);
+  });
+  $('#btn-backup').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try { await C.api('/api/admin/backups', { method: 'POST' }); C.toast('Backup made.'); renderBackups(); }
+    catch (err) { C.toast(err.message); }
+    finally { e.target.disabled = false; }
+  });
 })();
