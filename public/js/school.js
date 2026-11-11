@@ -317,8 +317,9 @@
       </form>
       <h3 class="sub">${t('Students')}</h3>
       ${students.length ? `<ul class="stu-list">${students.map((s) => `<li class="stu-row">
-          ${C.avatar(s.name)}<span class="nm">${esc(s.name)}<small>${s.lastSeen ? esc(t('Last in class {date}', { date: fmtWhen(s.lastSeen) })) : esc(t('Not in a class yet'))}</small></span>
+          ${C.avatar(s.name)}<span class="nm">${esc(s.name)}${s.stars ? ` <span class="star-count" title="${esc(t(s.stars === 1 ? '1 star' : '{n} stars', { n: s.stars }))}">★ ${s.stars}</span>` : ''}<small>${s.lastSeen ? esc(t('Last in class {date}', { date: fmtWhen(s.lastSeen) })) : esc(t('Not in a class yet'))}</small></span>
           <span class="acts">
+            <button class="btn btn-ghost btn-sm" type="button" data-star="${esc(s.id)}" data-name="${esc(s.name)}">★ ${t('Star')}</button>
             <button class="btn btn-ghost btn-sm" type="button" data-codes="${esc(s.id)}" data-name="${esc(s.name)}">${t('New codes')}</button>
             <button class="btn btn-ghost btn-sm" type="button" data-rmstu="${esc(s.id)}" data-name="${esc(s.name)}">${t('Remove')}</button>
           </span></li>`).join('')}</ul>
@@ -360,7 +361,35 @@
       showCodes(out, r.name);
     });
   }
+  // a star from the class list (for work outside a live class); Undo for a few seconds
+  let undoTimer = null;
+  async function starFromList(b) {
+    if (b.dataset.undo) {
+      clearTimeout(undoTimer);
+      try { await C.api(`/api/stars/${b.dataset.undo}`, { method: 'DELETE' }); C.toast('Star taken back.'); } catch (err) { C.toast(err.message); }
+      return renderRoster();
+    }
+    const reason = await C.ask({
+      title: t('A star for {name}', { name: b.dataset.name }), text: t('Why? {name} and their parent see it.', { name: b.dataset.name }),
+      tone: 'yellow', icon: 'star',
+      actions: Object.entries(C.STARS).map(([value, label]) => ({ label: t(label), value, kind: 'ghost' })),
+    });
+    if (!reason) return;
+    try {
+      const r = await C.api(`/api/students/${b.dataset.star}/stars`, { method: 'POST', body: JSON.stringify({ reason }) });
+      await renderRoster();
+      const nb = $(`#roster-detail [data-star="${CSS.escape(b.dataset.star)}"]`);
+      if (nb) {
+        nb.dataset.undo = r.id;
+        nb.textContent = t('Undo');
+        undoTimer = setTimeout(() => { delete nb.dataset.undo; nb.textContent = '★ ' + t('Star'); }, 8000);
+      }
+      C.toast(t('Star given to {name}.', { name: b.dataset.name }));
+    } catch (err) { C.toast(err.message); }
+  }
   $('#roster-detail').addEventListener('click', async (e) => {
+    const star = e.target.closest('[data-star]');
+    if (star) return starFromList(star);
     const c = e.target.closest('[data-codes]');
     if (c) {
       if (!(await C.sure(t('New codes for {name}?', { name: c.dataset.name }),

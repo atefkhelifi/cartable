@@ -13,6 +13,8 @@ const PROD = process.env.NODE_ENV === 'production';
 // The school code is only needed to create a teacher account.
 const SCHOOL_CODE = String(process.env.TEACHER_CODE || 'teach').trim();
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+// shown on the privacy page: who parents should write to about their child's data
+const PRIVACY_CONTACT = String(process.env.PRIVACY_CONTACT || '').trim().slice(0, 200);
 const ATTENDANCE_DAYS = Math.max(parseInt(process.env.ATTENDANCE_DAYS, 10) || 365, 1);
 const SESSION_DAYS = 30;
 const INSTANT_ROOM_HOURS = 12;
@@ -207,7 +209,16 @@ sql.exec(`CREATE TABLE IF NOT EXISTS push_subs (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS push_subs_owner ON push_subs(owner);
-CREATE TABLE IF NOT EXISTS push_sent (key TEXT PRIMARY KEY, at INTEGER NOT NULL)`);
+CREATE TABLE IF NOT EXISTS push_sent (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+-- stars ("bons points") a teacher gives a student
+CREATE TABLE IF NOT EXISTS points (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  teacher_id TEXT NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS points_student ON points(student_id)`);
 // Every school needs an admin: if there is none yet, the oldest teacher account becomes one.
 if (!sql.prepare('SELECT 1 FROM teachers WHERE is_admin = 1').get()) {
   sql.prepare('UPDATE teachers SET is_admin = 1 WHERE id = (SELECT id FROM teachers ORDER BY created_at LIMIT 1)').run();
@@ -446,7 +457,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '50kb' }));
 app.get('/healthz', (req, res) => res.send('ok'));
-app.get('/api/config', (req, res) => res.json({ iceServers: ICE_SERVERS }));
+app.get('/api/config', (req, res) => res.json({ iceServers: ICE_SERVERS, privacyContact: PRIVACY_CONTACT }));
 // the service worker is checked for updates on every visit
 app.get('/sw.js', (req, res, next) => { res.set('cache-control', 'no-cache'); next(); });
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -894,7 +905,8 @@ app.get('/api/rosters/:id/students', needTeacher, (req, res) => {
   const r = myRoster(req, req.params.id);
   if (!r) return res.status(404).json({ error: 'Class list not found.' });
   res.json(sql.prepare(`SELECT s.id, s.name,
-      (SELECT MAX(at) FROM attendance a WHERE a.student_id = s.id) AS lastSeen
+      (SELECT MAX(at) FROM attendance a WHERE a.student_id = s.id) AS lastSeen,
+      (SELECT COUNT(*) FROM points p WHERE p.student_id = s.id) AS stars
     FROM students s WHERE s.roster_id = ? ORDER BY s.name COLLATE NOCASE`).all(r.id)
     .map((s) => ({ ...s, lastSeen: s.lastSeen ? new Date(s.lastSeen).toISOString() : null })));
 });
@@ -1117,6 +1129,99 @@ app.delete('/api/hwfiles/:id', needSignedIn, (req, res) => {
 });
 
 // parents (and students) see which classes the child joined
+// ---------- stars ("bons points") ----------
+const STAR_REASONS = ['answer', 'help', 'effort', 'listen', 'idea'];
+const PUSH_STAR = {
+  en: { s: 'A star for {name}!', r: { answer: 'Good answer', help: 'Helping others', effort: 'Hard work', listen: 'Good listening', idea: 'Great idea' } },
+  fr: { s: 'Un bon point pour {name} !', r: { answer: 'Bonne réponse', help: 'Aide les autres', effort: 'Beau travail', listen: 'Bonne écoute', idea: 'Belle idée' } },
+  ar: { s: 'نجمة لـ{name}!', r: { answer: 'إجابة جيدة', help: 'مساعدة الآخرين', effort: 'عمل جاد', listen: 'إصغاء جيد', idea: 'فكرة رائعة' } },
+};
+function giveStar(studentId, teacherId, reason) {
+  const id = newId();
+  sql.prepare('INSERT INTO points (id, student_id, teacher_id, reason, at) VALUES (?, ?, ?, ?, ?)').run(id, studentId, teacherId, reason, Date.now());
+  const name = studentName(studentId);
+  notify("kind != 'teacher' AND owner = ?", [studentId], (sub) => {
+    const t = PUSH_STAR[sub.lang] || PUSH_STAR.en;
+    return { title: t.s.replace('{name}', name), body: t.r[reason], url: '/#/today', tag: 'star-' + id };
+  }).catch(() => {});
+  return id;
+}
+app.post('/api/students/:id/stars', needTeacher, (req, res) => {
+  const st = myStudent(req, req.params.id);
+  if (!st) return res.status(404).json({ error: 'Student not found.' });
+  if (!STAR_REASONS.includes(req.body?.reason)) return res.status(400).json({ error: 'Something went wrong. Try again.' });
+  if (!uploadLimit('star:' + req.teacher.id)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+  const id = giveStar(st.id, req.teacher.id, req.body.reason);
+  res.status(201).json({ id, stars: sql.prepare('SELECT COUNT(*) AS n FROM points WHERE student_id = ?').get(st.id).n });
+});
+app.delete('/api/stars/:id', needTeacher, (req, res) => {
+  const r = sql.prepare('DELETE FROM points WHERE id = ? AND teacher_id = ?').run(String(req.params.id), req.teacher.id);
+  if (!r.changes) return res.status(404).json({ error: 'Star not found.' });
+  res.json({ ok: true });
+});
+// a student (or their parent) sees their stars
+app.get('/api/my/stars', needSignedIn, (req, res) => {
+  if (!req.pupil) return res.json({ total: 0, recent: [] });
+  const total = sql.prepare('SELECT COUNT(*) AS n FROM points WHERE student_id = ?').get(req.pupil.id).n;
+  const recent = sql.prepare(`SELECT p.reason, p.at, t.name AS teacher FROM points p JOIN teachers t ON t.id = p.teacher_id
+    WHERE p.student_id = ? ORDER BY p.at DESC LIMIT 8`).all(req.pupil.id).map((p) => ({ reason: p.reason, at: new Date(p.at).toISOString(), teacher: p.teacher }));
+  res.json({ total, recent });
+});
+
+// ---------- your data (GDPR: right of access, and deleting a teacher account) ----------
+const iso = (t) => (t ? new Date(t).toISOString() : null);
+function pupilData(studentId) {
+  const st = sql.prepare('SELECT s.id, s.name, s.created_at, r.name AS roster FROM students s JOIN rosters r ON r.id = s.roster_id WHERE s.id = ?').get(studentId);
+  return {
+    student: { name: st.name, classList: st.roster, addedAt: iso(st.created_at) },
+    attendance: sql.prepare(`SELECT a.at, (SELECT c.title FROM courses c WHERE c.room = a.room LIMIT 1) AS class FROM attendance a WHERE a.student_id = ? ORDER BY a.at`)
+      .all(studentId).map((a) => ({ class: a.class || '', at: iso(a.at) })),
+    homework: sql.prepare(`SELECT h.title, h.due, s.text, s.submitted_at, s.mark, s.feedback, s.marked_at,
+        (SELECT GROUP_CONCAT(f.name, ' | ') FROM hw_files f WHERE f.submission_id = s.id) AS files
+      FROM submissions s JOIN homework h ON h.id = s.homework_id WHERE s.student_id = ? ORDER BY h.due`).all(studentId)
+      .map((x) => ({ homework: x.title, due: x.due, answer: x.text, handedInAt: iso(x.submitted_at), mark: x.marked_at ? x.mark : '', comment: x.marked_at ? x.feedback : '', markedAt: iso(x.marked_at), files: x.files ? x.files.split(' | ') : [] })),
+    stars: sql.prepare('SELECT reason, at FROM points WHERE student_id = ? ORDER BY at').all(studentId).map((p) => ({ reason: p.reason, at: iso(p.at) })),
+  };
+}
+function teacherData(t) {
+  const row = sql.prepare('SELECT username, name, created_at, last_login, is_admin FROM teachers WHERE id = ?').get(t.id);
+  const courses = sql.prepare('SELECT * FROM courses WHERE teacher_id = ? ORDER BY date, start_time').all(t.id);
+  const rooms = [...new Set(courses.map((c) => c.room)), ...sql.prepare('SELECT room FROM instant_rooms WHERE teacher_id = ?').all(t.id).map((r) => r.room)];
+  return {
+    account: { username: row.username, name: row.name, admin: !!row.is_admin, createdAt: iso(row.created_at), lastSignIn: iso(row.last_login) },
+    classes: courses.map(toCourse).map(({ id, series, ...c }) => c),
+    classLists: sql.prepare('SELECT id, name FROM rosters WHERE teacher_id = ? ORDER BY name').all(t.id).map((r) => ({
+      name: r.name,
+      students: sql.prepare('SELECT id, name FROM students WHERE roster_id = ? ORDER BY name').all(r.id).map((st) => ({ name: st.name, ...pupilData(st.id), student: undefined })),
+      homework: sql.prepare('SELECT title, instructions, due, created_at FROM homework WHERE roster_id = ? ORDER BY due').all(r.id).map((h) => ({ title: h.title, instructions: h.instructions, due: h.due, givenAt: iso(h.created_at) })),
+    })),
+    attendance: rooms.flatMap((room) => q.attendance.all(room).map((a) => ({ room, name: a.name, role: a.role, at: iso(a.at) }))),
+    classFiles: sql.prepare('SELECT room, name, size, created_at FROM class_files WHERE teacher_id = ? ORDER BY created_at').all(t.id).map((x) => ({ room: x.room, name: x.name, size: x.size, at: iso(x.created_at) })),
+  };
+}
+app.get('/api/my/export', needSignedIn, (req, res) => {
+  const data = req.teacher ? teacherData(req.teacher) : pupilData(req.pupil.id);
+  const who = req.teacher ? req.teacher.name : req.pupil.name;
+  res.set({
+    'content-type': 'application/json; charset=utf-8',
+    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(`Cartable - ${who} - ${new Date().toISOString().slice(0, 10)}.json`)}`,
+    'cache-control': 'no-store',
+  });
+  res.send(JSON.stringify({ exportedAt: new Date().toISOString(), from: 'Cartable', as: req.teacher ? 'teacher' : req.pupil.kind, ...data }, null, 2));
+});
+// A teacher deletes their own account (with their password). The school keeps at least one admin.
+app.delete('/api/auth/account', needTeacher, (req, res) => {
+  if (!authLimit(req.ip)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
+  const t = sql.prepare('SELECT pass, is_admin FROM teachers WHERE id = ?').get(req.teacher.id);
+  if (!checkPassword(String(req.body?.password || ''), t.pass)) return res.status(403).json({ error: 'Your current password is not right.' });
+  const others = sql.prepare('SELECT COUNT(*) AS n, SUM(is_admin) AS admins FROM teachers WHERE id != ?').get(req.teacher.id);
+  if (t.is_admin && others.n > 0 && !others.admins) return res.status(400).json({ error: 'You are the only school admin. Make another teacher admin first.' });
+  for (const [room] of rooms) if (roomInfo(room)?.teacherId === req.teacher.id) endLiveRoom(room);
+  sql.prepare('DELETE FROM teachers WHERE id = ?').run(req.teacher.id);
+  dropOrphanFiles();
+  res.json({ ok: true });
+});
+
 app.get('/api/my/attendance', needSignedIn, (req, res) => {
   if (!req.pupil) return res.json([]);
   res.json(sql.prepare(`SELECT a.at, a.room, (SELECT c.title FROM courses c WHERE c.room = a.room LIMIT 1) AS title
@@ -1278,14 +1383,16 @@ function getRoom(id, info) {
     rooms.set(id, {
       peers: new Map(), lobby: new Map(), locked: false, boardLocked: false, waiting: !!info?.waiting, strokes: [], points: 0, bg: null, recording: null, poll: null, groups: null,
       // chat: 'all' (everyone writes), 'teacher' (students write to the teacher only) or 'off' (only the teacher writes)
-      chat: 'all', chatMuted: new Set(), pupilIds: new Map(),
+      chat: 'all', chatMuted: new Set(), pupilIds: new Map(), captions: false,
     });
   }
   return rooms.get(id);
 }
 const peerList = (r) => [...r.peers].map(([id, p]) => ({ id, ...p }));
 const lobbyList = (r) => [...r.lobby].map(([id, p]) => ({ id, name: p.name }));
-const flags = (r) => ({ locked: r.locked, boardLocked: r.boardLocked, waiting: r.waiting, chat: r.chat });
+const flags = (r) => ({ locked: r.locked, boardLocked: r.boardLocked, waiting: r.waiting, chat: r.chat, captions: r.captions });
+// people who hear this person right now: everyone, or during group work only their group
+const audienceOf = (r, id) => [...r.peers.keys()].filter((x) => !r.groups || groupOf(r, x) === groupOf(r, id));
 const CHAT_MODES = ['all', 'teacher', 'off'];
 // Send everyone to the end-of-class screen (the teacher ended it, or their account was deleted).
 function endLiveRoom(roomId) {
@@ -1379,6 +1486,7 @@ io.on('connection', (socket) => {
   const drawLimit = limiter(80, 1000);
   const chatLimit = limiter(5, 5000);
   const reactLimit = limiter(10, 5000);
+  const captionLimit = limiter(30, 5000);
   const signalLimit = limiter(400, 10000);
   const on = (event, fn) => socket.on(event, (...args) => {
     try { fn(...args); } catch (e) { console.error(`socket "${event}" failed:`, e.message); }
@@ -1445,6 +1553,16 @@ io.on('connection', (socket) => {
     reply(res);
   });
 
+  // live captions: the teacher's browser turns their speech into text and sends it here
+  on('caption', (msg) => {
+    if (!roomId || !me || me.role !== 'teacher' || !isObj(msg) || typeof msg.text !== 'string' || !captionLimit(1)) return;
+    const r = getRoom(roomId);
+    if (!r.captions) return;
+    const text = msg.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(-300);
+    const out = { from: socket.id, name: me.name, text, final: !!msg.final };
+    for (const id of audienceOf(r, socket.id)) if (id !== socket.id) io.to(id).emit('caption', out);
+  });
+
   // relay WebRTC signals to one peer
   on('signal', (msg) => {
     if (!roomId || !me || !isObj(msg) || typeof msg.to !== 'string' || !isObj(msg.data) || !signalLimit(1)) return;
@@ -1482,7 +1600,7 @@ io.on('connection', (socket) => {
 
   on('state', (patch) => {
     if (!roomId || !me || !isObj(patch)) return;
-    for (const k of ['hand', 'mic', 'cam', 'sharing']) if (k in patch) me[k] = !!patch[k];
+    for (const k of ['hand', 'mic', 'cam', 'sharing', 'saver']) if (k in patch) me[k] = !!patch[k];
     io.to(roomId).emit('peer-state', { id: socket.id, ...me });
   });
 
@@ -1578,6 +1696,21 @@ io.on('connection', (socket) => {
         keys.forEach((k) => (p.chatMuted ? r.chatMuted.add(k) : r.chatMuted.delete(k)));
         io.to(roomId).emit('peer-state', { id: target, ...p });
         io.to(target).emit('chat-muted', p.chatMuted);
+        break;
+      }
+      case 'captions':
+        r.captions = !!msg.on;
+        io.to(roomId).emit('room-flags', flags(r));
+        break;
+      // a star for a student; saved when they signed in with their code
+      case 'star': {
+        const p = has && r.peers.get(target);
+        if (!p || p.role === 'teacher' || !STAR_REASONS.includes(msg.reason) || !reactLimit(1)) return;
+        const studentId = r.pupilIds.get(target);
+        const mine = studentId && sql.prepare('SELECT 1 FROM students s JOIN rosters ro ON ro.id = s.roster_id WHERE s.id = ? AND ro.teacher_id = ?').get(studentId, roomInfo(roomId)?.teacherId);
+        if (mine) giveStar(studentId, roomInfo(roomId).teacherId, msg.reason);
+        for (const id of audienceOf(r, target)) io.to(id).emit('star', { id: target, name: p.name, reason: msg.reason, saved: !!mine });
+        if (!audienceOf(r, target).includes(socket.id)) socket.emit('star', { id: target, name: p.name, reason: msg.reason, saved: !!mine });
         break;
       }
       case 'chat-delete':

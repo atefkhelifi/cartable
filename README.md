@@ -26,6 +26,9 @@ whiteboard. Students see their timetable and join with one click.
 - Attendance list of who joined and when
 - Class recording (teacher only): records the class as the teacher sees it, with everyone's voices, and saves an MP4 (or WebM) to the teacher's computer. Everyone sees a red "Recording" badge while it runs. Works in Chrome and Edge on a computer; when Chrome asks, pick the Cartable tab and keep "Also share tab audio" on.
 - Keyboard shortcuts: `M` microphone, `V` camera, `H` raise hand
+- Live captions (teacher): what the teacher says appears as subtitles for the class, in the app's language. It uses the browser's speech recognition (Chrome, Edge or Safari), which sends the teacher's voice to the browser maker's speech service, so only the teacher's voice is captioned. Students can hide the captions.
+- Save data: anyone can switch to only the teacher's video and shared screens, in lower quality, for slow or mobile connections (works with the mesh and with LiveKit)
+- Stars ("bons points"): the teacher gives a star for a good answer, helping others, hard work, good listening or a great idea, in class or from the class list. Everyone in class sees it; students signed in with a code keep their stars, and they and their parents see them on the Today page (and get a notification).
 
 **Class lists, homework and parents**
 - Class lists: the teacher adds students (one name per line) and Cartable makes a sign-in code for each student (like `k7pm-w3xa`) and one for a parent (like `p-x4kq9-m2rtw`). Codes are shown once, on printable cards; the teacher can make new ones if a code is lost.
@@ -38,6 +41,11 @@ whiteboard. Students see their timetable and join with one click.
 - The first teacher account is the school admin. Admins see every teacher account, make other admins, and delete accounts.
 - Forgotten passwords: the admin makes a one-time reset code (valid 24 hours) and gives it to the teacher, who chooses **Forgot your password?** on the sign-in page. No email server needed. Teachers can also change their own password.
 - Backups: a copy of the database every day, kept for 14 days, which admins can download from the **School** page (see [Keeping your data](#keeping-your-data)).
+
+**Privacy**
+- A privacy page (`/privacy.html`, in English, French and Arabic) says what is kept, for how long, who sees it and which other services are used. Set `PRIVACY_CONTACT` to show who parents should write to.
+- **My account → My data** downloads everything Cartable keeps about a teacher, a student or (for parents) their child, as a JSON file. Sign-in codes and passwords are never in it.
+- Teachers can delete their own account; the last school admin must first make someone else admin.
 
 **Timetable and calendar**
 - Month calendar with colour-coded classes
