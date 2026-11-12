@@ -672,6 +672,7 @@
     "Your account is deleted.": "Votre compte est supprimé.",
     "You are the only school admin. Make another teacher admin first.": "Vous êtes le seul administrateur de l'école. Nommez d'abord un autre enseignant administrateur.",
 
+    "Until {time}": "Jusqu'à {time}",
     // reminders
     'Reminders': 'Rappels',
     'Get a notification 5 minutes before each class while Cartable is open': 'Recevoir une notification 5 minutes avant chaque cours quand Cartable est ouvert',
@@ -1327,6 +1328,7 @@
     "Your account is deleted.": "تم حذف حسابك.",
     "You are the only school admin. Make another teacher admin first.": "أنت المسؤول الوحيد عن المدرسة. اجعل معلمًا آخر مسؤولًا أولًا.",
 
+    "Until {time}": "حتى {time}",
     // reminders
     "Reminders": "التذكيرات",
     "Get a notification 5 minutes before each class while Cartable is open": "تلقَّ إشعارًا قبل كل حصة بـ5 دقائق ما دام Cartable مفتوحًا",

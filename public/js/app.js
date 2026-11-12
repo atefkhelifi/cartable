@@ -429,7 +429,7 @@
             ${next.notes ? `<p class="notes"><b>${t('Bring:')}</b> ${esc(next.notes)}</p>` : ''}
           </div>
           <div>
-            ${joinButton(next, true) || `<p class="countdown">${t('Starts in {time}', { time: relTime(ms) })}</p>${isParent() ? '' : `<p class="muted small">${t('You can join 10 minutes before.')}</p>`}`}
+            ${joinButton(next, true) || (ms > 0 ? `<p class="countdown">${t('Starts in {time}', { time: relTime(ms) })}</p>${isParent() ? '' : `<p class="muted small">${t('You can join 10 minutes before.')}</p>`}` : `<p class="countdown">${t('Until {time}', { time: fmtTime(next.end) })}</p>`)}
           </div>
         </article>`;
     }

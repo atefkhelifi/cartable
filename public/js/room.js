@@ -367,6 +367,7 @@
     if (!p?.tile) return;
     const see = canSee(id);
     p.tile.hidden = !see;
+    layoutTiles();
     p.tile.querySelector('video').muted = !see;
     if (!see && pinnedId === id) pinnedId = null;
   }
@@ -443,10 +444,16 @@
     el.querySelector('.pin').textContent = tr(pinnedId === id ? 'Unpin' : 'Pin');
   }
 
+  // Video tiles fill the stage in a square-ish grid: 2x2 for 4 people, 3x3 for 9.
+  // Phones get fewer columns (tiles at least ~150px wide).
   function layoutTiles() {
-    const n = $('#tiles').children.length;
-    $('#people-count').textContent = n;
+    const box = $('#tiles');
+    $('#people-count').textContent = box.children.length;
+    const n = [...box.children].filter((t) => !t.hidden).length || 1;
+    const fit = Math.max(1, Math.floor((box.clientWidth || 800) / 150));
+    box.style.setProperty('--cols', String(Math.max(1, Math.min(Math.ceil(Math.sqrt(n)), fit))));
   }
+  window.addEventListener('resize', () => { if (R.active) layoutTiles(); });
 
   function updateSpotlight() {
     const sharer = [...peers].find(([id, p]) => p.info.sharing && canSee(id))?.[0] || (screenTrack ? 'me' : null);
