@@ -410,7 +410,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .spotlight { flex: 1 1 auto; min-height: 0; border-radius: var(--r-lg); overflow: hidden; background: #000; position: relative; }
 .spotlight video, .spotlight canvas { width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .spotlight .tile-name { position: absolute; inset-inline-start: .75rem; bottom: .75rem; }
-.tiles { flex: 1 1 auto; min-height: 0; display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); grid-auto-rows: minmax(0, 1fr); align-content: center; }
+.tiles { flex: 1 1 auto; min-height: 0; display: grid; gap: .75rem; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); align-content: center; }
 .stage.has-spot .tiles { flex: 0 0 132px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 200px; overflow-x: auto; justify-content: start; }
 
 .tile { position: relative; background: var(--stage-2); border-radius: var(--r-lg); overflow: hidden; min-height: 0; aspect-ratio: 16/9; max-height: 100%; justify-self: stretch; border: 3px solid transparent; transition: border-color .15s; }
@@ -522,8 +522,10 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .dock-btn:hover { background: var(--stage-3); }
 .dock-btn svg { width: 24px; height: 24px; }
 .dock-btn .slash { display: none; }
-.dock-btn[aria-pressed="false"]:not(#btn-share):not(#btn-rec) { background: var(--red); color: #fff; }
-.dock-btn[aria-pressed="false"]:not(#btn-share):not(#btn-rec) .slash { display: inline; }
+/* mic and camera off are red; share, record and captions are simply not on */
+.dock-btn[aria-pressed="false"]:not(#btn-share):not(#btn-rec):not(#btn-cc) { background: var(--red); color: #fff; }
+.dock-btn[aria-pressed="false"]:not(#btn-share):not(#btn-rec):not(#btn-cc) .slash { display: inline; }
+#btn-cc[aria-pressed="true"] { background: var(--yellow); color: var(--ink); }
 #btn-share[aria-pressed="true"] { background: var(--green); color: #fff; }
 .dock-side-toggle { display: none; }
 
@@ -576,7 +578,7 @@ body:not(.is-teacher) .teacher-only { display: none !important; }
   .side { position: fixed; left: 0; right: 0; bottom: 0; top: 30%; z-index: 30; border-radius: var(--r-lg) var(--r-lg) 0 0; transform: translateY(100%); transition: transform .25s ease; }
   .side.open { transform: none; }
   .dock-side-toggle { display: flex; }
-  .tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .tiles { grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); }
   .dock { gap: .35rem; padding: .6rem 8px .8rem; }
   .dock-btn { min-width: 56px; padding: .4rem; }
   .dock-btn span, #hand-label { display: none; }
